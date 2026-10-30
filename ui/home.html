@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ArrowMem</title>
+<link rel="stylesheet" href="home.css">
+</head>
+<body>
+<!-- Thin page: the app (Rust) decides every state and sends machine values; this file only draws them. Words come from strings/status.json (home block), UNCLEARED until reviewed. -->
+<main>
+<section class="card" id="pair" hidden>
+ <h1 id="t-title"></h1>
+ <p class="meta lead" id="t-scan"></p>
+ <div class="grid" id="grid">
+  <img id="qr" class="qr" alt="">
+  <div>
+   <div id="codebox" hidden><div class="lbl" id="t-code-label"></div><div class="code" id="code"></div></div>
+   <div class="lbl" id="t-text-label"></div>
+   <div class="line"><code id="payload"></code><button class="btn sec sm" id="copy" type="button"></button></div>
+   <div class="meta"><span id="t-computer"></span>: <b id="addr"></b> &middot; <span id="t-name"></span>: <b id="devname"></b></div>
+   <div class="meta small" id="t-name-hint"></div>
+   <button class="btn" id="start" type="button"></button>
+   <span class="meta" id="start-out" role="alert"></span>
+  </div>
+ </div>
+</section>
+<section class="card" id="ask" hidden>
+ <h1 id="t-asked"></h1>
+ <div class="askbox">
+  <div class="meta" id="t-six"></div>
+  <input id="digits" type="text" inputmode="numeric" maxlength="6" autocomplete="off" aria-labelledby="t-six" aria-describedby="hint">
+  <div class="meta" id="hint" role="alert"></div>
+  <div class="btns"><button class="btn" id="connect" type="button"></button><button class="btn sec" id="notme" type="button"></button></div>
+ </div>
+ <p class="meta" id="t-notme-note"></p>
+</section>
+<section class="card" id="done" hidden>
+ <h1 id="done-h"></h1>
+ <p class="meta" id="done-p"></p>
+ <button class="btn" id="again" type="button"></button>
+</section>
+<section class="card" id="down" hidden>
+ <div class="msg"><div class="ic" aria-hidden="true">!</div><div><h1 id="t-down-h"></h1><p class="meta" id="t-down-p"></p><button class="btn" id="restart" type="button"></button> <span class="meta" id="restart-out" role="alert"></span></div></div>
+</section>
+<section class="card" id="nonet" hidden>
+ <div class="msg"><div class="ic" aria-hidden="true">!</div><div><p class="meta" id="t-nonet"></p><p class="meta" id="t-waits"></p><button class="btn" id="retry-net" type="button"></button></div></div>
+</section>
+<section class="card" id="models" hidden>
+ <h1 id="t-models-h"></h1>
+ <div id="model-list"></div>
+ <div id="found" hidden><h2 id="t-found-h"></h2><p class="meta" id="t-found-p"></p><div id="found-list"></div></div>
+ <p class="meta" id="models-out" role="alert"></p>
+</section>
+<section class="card rows">
+ <div class="row"><span class="dot" id="dot-service"></span><span class="k" id="k-service"></span><span class="v" id="v-service"></span></div>
+ <div class="row"><span class="dot" id="dot-model"></span><span class="k" id="k-model"></span><span class="v" id="v-model"></span></div>
+ <div class="row"><span class="dot" id="dot-phone"></span><span class="k" id="k-phone"></span><span class="v" id="v-phone"></span></div>
+ <div class="row"><span class="dot" id="dot-fw"></span><span class="k" id="k-fw"></span><span class="v" id="v-fw"></span><button class="btn sec sm" id="retry-fw" type="button" hidden></button></div>
+</section>
+</main>
+<script src="home.js"></script>
+</body></html>

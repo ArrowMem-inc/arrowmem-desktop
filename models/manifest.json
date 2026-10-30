@@ -1,0 +1,272 @@
+{
+ "schema": 1,
+ "note": "Only source of downloadable files. Model-agnostic: selection reads tier, min_ram_gb and approved from this data only. default marks the known-good entry; recommended is a UI hint only. sha256 from HF LFS oid / GitHub release digest read 2026-10-23; UNVERIFIED means not re-hashed from a downloaded file. IQ4_XS fallback is left out: no google-org IQ4_XS repo exists (only third-party), checked via HF API 2026-10-24.",
+ "models": [
+  {
+   "id": "gemma-4-E2B-it-q4_0",
+   "desktop_min_ram_gb": 8,
+   "headroom_gb": 2,
+   "display_name": "Gemma 4 E2B",
+   "quant": "q4_0",
+   "repo": "google/gemma-4-E2B-it-qat-q4_0-gguf",
+   "file": "gemma-4-E2B_q4_0-it.gguf",
+   "size_bytes": 3349516256,
+   "sha256": "fa401b55b07ee70a54c6dae3903c783a6e65064312529ea57175cb5f8dec6634",
+   "min_ram_gb": 8,
+   "verified": "cross-checked against phone-app local_models.json; not re-hashed",
+   "license": "Apache-2.0",
+   "license_url": "https://ai.google.dev/gemma/docs/gemma_4_license",
+   "gated": false,
+   "license_source": "HF API /api/models/google/gemma-4-E2B-it-qat-q4_0-gguf/revision/675cff42a74c774d6cb76f76d8eacb49b48c9b93 cardData.license=apache-2.0, license_link as given, gated=False, read 2026-10-23; repo has no LICENSE or NOTICE file (only README.md, .gitattributes); the license_url page reads Apache License 2.0",
+   "converted": true,
+   "commit": "675cff42a74c774d6cb76f76d8eacb49b48c9b93",
+   "source_host": "huggingface.co",
+   "tier": 1,
+   "approved": true,
+   "default": false
+  },
+  {
+   "id": "gemma-4-E4B-it-q4_0",
+   "desktop_min_ram_gb": 8,
+   "headroom_gb": 2,
+   "display_name": "Gemma 4 E4B",
+   "quant": "q4_0",
+   "repo": "google/gemma-4-E4B-it-qat-q4_0-gguf",
+   "file": "gemma-4-E4B_q4_0-it.gguf",
+   "size_bytes": 5154941280,
+   "sha256": "676c35070db6dbe52f93e9c864ee0fba4eddea94b9c875d9cb10daff453fbaee",
+   "min_ram_gb": 16,
+   "verified": "UNVERIFIED: HF API only",
+   "license": "Apache-2.0",
+   "license_url": "https://ai.google.dev/gemma/docs/gemma_4_license",
+   "gated": false,
+   "license_source": "HF API /api/models/google/gemma-4-E4B-it-qat-q4_0-gguf/revision/4b4a2c1d584be7264f87aac328a1bc739ce81b6c cardData.license=apache-2.0, license_link as given, gated=False, read 2026-10-23; repo has no LICENSE or NOTICE file (only README.md, .gitattributes); the license_url page reads Apache License 2.0",
+   "converted": true,
+   "commit": "4b4a2c1d584be7264f87aac328a1bc739ce81b6c",
+   "source_host": "huggingface.co",
+   "tier": 2,
+   "approved": true,
+   "default": true
+  },
+  {
+   "id": "gemma-4-12B-it-q4_0",
+   "desktop_min_ram_gb": 16,
+   "headroom_gb": 3,
+   "display_name": "Gemma 4 12B",
+   "quant": "q4_0",
+   "repo": "google/gemma-4-12B-it-qat-q4_0-gguf",
+   "file": "gemma-4-12b-it-qat-q4_0.gguf",
+   "size_bytes": 6975879296,
+   "sha256": "93567e57a8fe10b23569b9d9ec38cd005deedf71e29477c421a4b83f418a538b",
+   "min_ram_gb": 16,
+   "verified": "UNVERIFIED: sizes and sha256 from the Hugging Face file listing (read from the HF tree API on 2026-10-27); every file is checked against them on download; not tested by ArrowMem",
+   "license": "Apache-2.0",
+   "license_url": "https://ai.google.dev/gemma/docs/gemma_4_license",
+   "gated": false,
+   "license_source": "HF API /api/models/google/gemma-4-12B-it-qat-q4_0-gguf/revision/29d097773436b69ff9feafd636ab4cf873786537 cardData.license=apache-2.0, gated=False, read 2026-10-24; files: README.md, .gitattributes, the model file and an mmproj file (not used); the license_url page reads Apache License 2.0",
+   "converted": true,
+   "commit": "29d097773436b69ff9feafd636ab4cf873786537",
+   "source_host": "huggingface.co",
+   "tier": 3,
+   "approved": false,
+   "default": false
+  },
+  {
+   "id": "gemma-4-26B-A4B-it-q4_0",
+   "desktop_min_ram_gb": 24,
+   "headroom_gb": 4,
+   "display_name": "Gemma 4 26B A4B",
+   "quant": "q4_0",
+   "repo": "google/gemma-4-26B-A4B-it-qat-q4_0-gguf",
+   "file": "gemma-4-26B_q4_0-it.gguf",
+   "size_bytes": 14439363584,
+   "sha256": "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d",
+   "min_ram_gb": 24,
+   "verified": "UNVERIFIED: sizes and sha256 from the Hugging Face file listing (read from the HF tree API on 2026-10-27); every file is checked against them on download; not tested by ArrowMem",
+   "license": "Apache-2.0",
+   "license_url": "https://ai.google.dev/gemma/docs/gemma_4_license",
+   "gated": false,
+   "license_source": "HF API /api/models/google/gemma-4-26B-A4B-it-qat-q4_0-gguf/revision/d1c082be9cf3c8a514acf63b8761f4b41935842e cardData.license=apache-2.0, license_link as given, gated=False, read 2026-10-23; repo has no LICENSE or NOTICE file (only README.md, .gitattributes); the license_url page reads Apache License 2.0",
+   "converted": true,
+   "commit": "d1c082be9cf3c8a514acf63b8761f4b41935842e",
+   "source_host": "huggingface.co",
+   "tier": 4,
+   "approved": false,
+   "default": false
+  },
+  {
+   "id": "qwen3-14b-q4_k_m",
+   "display_name": "Qwen3 14B",
+   "desktop_min_ram_gb": 12,
+   "headroom_gb": 2,
+   "quant": "Q4_K_M",
+   "repo": "Qwen/Qwen3-14B-GGUF",
+   "file": "Qwen3-14B-Q4_K_M.gguf",
+   "size_bytes": 9001752960,
+   "sha256": "500a8806e85ee9c83f3ae08420295592451379b4f8cf2d0f41c15dffeb6b81f0",
+   "min_ram_gb": 12,
+   "verified": "UNVERIFIED: sizes and sha256 from the Hugging Face file listing (read from the HF tree API on 2026-10-27); every file is checked against them on download; not tested by ArrowMem",
+   "license": "Apache-2.0",
+   "license_url": "https://huggingface.co/Qwen/Qwen3-14B-GGUF/blob/530227a7d994db8eca5ab5ced2fb692b614357fd/LICENSE",
+   "gated": false,
+   "license_source": "HF API /api/models/Qwen/Qwen3-14B-GGUF cardData.license=apache-2.0, gated=False, private=False, the repo carries a LICENSE file, revision 530227a7d994db8eca5ab5ced2fb692b614357fd, read 2026-10-27",
+   "converted": false,
+   "commit": "530227a7d994db8eca5ab5ced2fb692b614357fd",
+   "source_host": "huggingface.co",
+   "tier": 5,
+   "approved": true,
+   "offer_only": true,
+   "default": false
+  },
+  {
+   "id": "qwen3-32b-q4_k_m",
+   "display_name": "Qwen3 32B",
+   "desktop_min_ram_gb": 24,
+   "headroom_gb": 2,
+   "quant": "Q4_K_M",
+   "repo": "Qwen/Qwen3-32B-GGUF",
+   "file": "Qwen3-32B-Q4_K_M.gguf",
+   "size_bytes": 19762149024,
+   "sha256": "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689",
+   "min_ram_gb": 24,
+   "verified": "UNVERIFIED: sizes and sha256 from the Hugging Face file listing (read from the HF tree API on 2026-10-27); every file is checked against them on download; not tested by ArrowMem",
+   "license": "Apache-2.0",
+   "license_url": "https://huggingface.co/Qwen/Qwen3-32B-GGUF/blob/938a7432affaec9157f883a87164e2646ae17555/LICENSE",
+   "gated": false,
+   "license_source": "HF API /api/models/Qwen/Qwen3-32B-GGUF cardData.license=apache-2.0, gated=False, private=False, the repo carries a LICENSE file, revision 938a7432affaec9157f883a87164e2646ae17555, read 2026-10-27",
+   "converted": false,
+   "commit": "938a7432affaec9157f883a87164e2646ae17555",
+   "source_host": "huggingface.co",
+   "tier": 6,
+   "approved": true,
+   "offer_only": true,
+   "default": false
+  },
+  {
+   "id": "gpt-oss-120b-mxfp4",
+   "display_name": "Very large, 120B",
+   "desktop_min_ram_gb": 70,
+   "headroom_gb": 4,
+   "quant": "MXFP4",
+   "repo": "ggml-org/gpt-oss-120b-GGUF",
+   "file": "gpt-oss-120b-MXFP4.gguf",
+   "size_bytes": 63387346208,
+   "sha256": "582bd40f6886200101f4c4ed9f25f3fe80cc14c86e9e2b37746cd8904a0c622d",
+   "min_ram_gb": 70,
+   "verified": "UNVERIFIED: sizes and sha256 from the Hugging Face file listing (read from the HF tree API on 2026-10-27); every file is checked against them on download; not tested by ArrowMem",
+   "license": "Apache-2.0",
+   "license_url": "https://www.apache.org/licenses/LICENSE-2.0",
+   "gated": false,
+   "license_source": "HF API /api/models/ggml-org/gpt-oss-120b-GGUF tags license:apache-2.0, cardData.license=apache-2.0, gated=False, revision 7200b74bea78b0a2964ef9f3897eefa401e890ff, read 2026-10-27; the repo has no LICENSE file of its own, the licence is the base model's Apache-2.0 per the tags",
+   "converted": false,
+   "commit": "7200b74bea78b0a2964ef9f3897eefa401e890ff",
+   "source_host": "huggingface.co",
+   "tier": 7,
+   "approved": true,
+   "offer_only": true,
+   "hide_unless_fits": true,
+   "default": false
+  },
+  {
+   "id": "qwen3-235b-a22b-q4_k_m",
+   "display_name": "Qwen3 235B",
+   "desktop_min_ram_gb": 150,
+   "headroom_gb": 4,
+   "quant": "Q4_K_M",
+   "repo": "Qwen/Qwen3-235B-A22B-GGUF",
+   "file": "Q4_K_M/Qwen3-235B-A22B-Q4_K_M-00001-of-00005.gguf",
+   "size_bytes": 142154074176,
+   "sha256": "ce666f562eb8eefda48eec0aa93680ba40ca5727d0ba9918f3fb1771141375e6",
+   "min_ram_gb": 150,
+   "verified": "UNVERIFIED: sizes and sha256 from the Hugging Face file listing (read from the HF tree API on 2026-10-27); every file is checked against them on download; not tested by ArrowMem",
+   "license": "Apache-2.0",
+   "license_url": "https://huggingface.co/Qwen/Qwen3-235B-A22B-GGUF/blob/211e807ecd6d37446a747409108783e39a04e80f/LICENSE",
+   "gated": false,
+   "license_source": "HF API /api/models/Qwen/Qwen3-235B-A22B-GGUF cardData.license=apache-2.0, gated=False, the repo carries a LICENSE file, revision 211e807ecd6d37446a747409108783e39a04e80f, read 2026-10-27",
+   "converted": false,
+   "commit": "211e807ecd6d37446a747409108783e39a04e80f",
+   "source_host": "huggingface.co",
+   "tier": 8,
+   "approved": true,
+   "offer_only": true,
+   "hide_unless_fits": true,
+   "default": false,
+   "parts": [
+    {
+     "file": "Q4_K_M/Qwen3-235B-A22B-Q4_K_M-00001-of-00005.gguf",
+     "size_bytes": 29742283872,
+     "sha256": "ce666f562eb8eefda48eec0aa93680ba40ca5727d0ba9918f3fb1771141375e6"
+    },
+    {
+     "file": "Q4_K_M/Qwen3-235B-A22B-Q4_K_M-00002-of-00005.gguf",
+     "size_bytes": 29974106496,
+     "sha256": "ac73c457aac5993d02444063c976062c70be609c03ca6584d0c3be0632e79ce6"
+    },
+    {
+     "file": "Q4_K_M/Qwen3-235B-A22B-Q4_K_M-00003-of-00005.gguf",
+     "size_bytes": 29933980640,
+     "sha256": "6357074e14a748446c2b0dcc64a1a7c64b1c124fbfb9cb48114147645d3310fe"
+    },
+    {
+     "file": "Q4_K_M/Qwen3-235B-A22B-Q4_K_M-00004-of-00005.gguf",
+     "size_bytes": 29936094304,
+     "sha256": "2eb47718eaeeebee3726cd2ca4ac11b5768faded5d7adddec5b754aeb7c387dd"
+    },
+    {
+     "file": "Q4_K_M/Qwen3-235B-A22B-Q4_K_M-00005-of-00005.gguf",
+     "size_bytes": 22567608864,
+     "sha256": "dbe2c7547c0d397d2ef16e08218a586383771dc12e9678cfd6fa8cc23e94e8f8"
+    }
+   ]
+  }
+ ],
+ "llama_server": {
+  "release": "b11840",
+  "base_url": "https://github.com/ggml-org/llama.cpp/releases/download/b11840/",
+  "builds": {
+   "x86_64-unknown-linux-gnu": {
+    "cpu": {
+     "asset": "llama-b11840-bin-ubuntu-x64.tar.gz",
+     "size_bytes": 22423573,
+     "sha256": "5f6e72e772a1264df279d6b7a848570fdc00e5d968b72e7a917d19e07da96400"
+    },
+    "vulkan": {
+     "asset": "llama-b11840-bin-ubuntu-vulkan-x64.tar.gz",
+     "size_bytes": 35065592,
+     "sha256": "f4dcde3cc4298a380865c3df07c70734f1025800d9a1916bb0143129f3858905"
+    }
+   },
+   "aarch64-unknown-linux-gnu": {
+    "cpu": {
+     "asset": "llama-b11840-bin-ubuntu-arm64.tar.gz",
+     "size_bytes": 18123932,
+     "sha256": "7df930178fc4a97306839a0a004d81b8752787ca42170269f87871c52610d9d0"
+    },
+    "vulkan": {
+     "asset": "llama-b11840-bin-ubuntu-vulkan-arm64.tar.gz",
+     "size_bytes": 28410565,
+     "sha256": "c09ff84a655f987c8744f22be2eb016a48a7e84f8d0c35139f788a89aacdfde2"
+    }
+   },
+   "aarch64-apple-darwin": {
+    "cpu": {
+     "asset": "llama-b11840-bin-macos-arm64.tar.gz",
+     "size_bytes": 16236017,
+     "sha256": "f24acd73f63f6c54b02dcee483c6d30d71b7b732e216c9215a932268e5c7d6f4"
+    }
+   }
+  },
+  "verified": "UNVERIFIED: GitHub API digest field, not re-hashed"
+ },
+ "allowed_repos": [
+  "google/gemma-4-E2B-it-qat-q4_0-gguf",
+  "google/gemma-4-E4B-it-qat-q4_0-gguf",
+  "google/gemma-4-12B-it-qat-q4_0-gguf",
+  "google/gemma-4-26B-A4B-it-qat-q4_0-gguf",
+  "Qwen/Qwen3-14B-GGUF",
+  "Qwen/Qwen3-32B-GGUF",
+  "ggml-org/gpt-oss-120b-GGUF",
+  "Qwen/Qwen3-235B-A22B-GGUF"
+ ],
+ "licence_notice": "PLACEHOLDER, uncleared: licence name, link and the changed-file note appear here, near the model card. Not final copy."
+}

@@ -1,0 +1,144 @@
+{
+  "product": "vac",
+  "name": "Veterans disability claim",
+  "name_fr": "Demande d'invalidité pour vétérans",
+  "domain": "myvacform.ca",
+  "support_email": "support@arrowmem.ca",
+  "_languages_note": "REQUIRED, and a MAP not a list. Each entry carries what the engine cannot derive: criteria_key is the language key used in tod_name_map and the criteria table (it REPLACES a positional out_lang[:2] slice, which silently produced the wrong key for any subtag that is not exactly 2 characters); transcribe is the AWS Transcribe LanguageCode, which is NOT derivable from the app code (en_ca maps to en-US while fr_ca maps to fr-CA, and no single rule produces both); vocab_env names the DEPLOYMENT env var holding the custom-vocabulary name for this language. The set of keys here MUST equal the set of languages in the questions CSV; the build fails if they differ.",
+  "languages": {
+    "en_ca": {
+      "criteria_key": "en",
+      "transcribe": "en-US",
+      "vocab_env": "VOCAB_NAME_EN"
+    },
+    "fr_ca": {
+      "criteria_key": "fr",
+      "transcribe": "fr-CA",
+      "vocab_env": "VOCAB_NAME_FR"
+    }
+  },
+  "government_form": "PEN 923, Veterans Affairs Canada disability benefit",
+  "content": {
+    "questions_csv": "questions/export_All-Questions-modified_2026-07-22_cleaned.csv",
+    "tod_criteria_dir": "tod_criteria",
+    "conditions": "conditions.json",
+    "prompt": "prompt.json",
+    "promo_seed": "promo_codes/promo_seed.json"
+  },
+  "prompt_placeholders": {
+    "_note": "The four substitution tokens in prompt.json's user template. REQUIRED: the engine reads these from here and carries no default. Until 2026-07-31 these exact four names were hardcoded in generate_handler, which is why they look like engine vocabulary rather than product vocabulary - they are simply the names this pack's template happens to use, and another pack is free to use its own. Validated at import against the real template, so a name declared here but absent from prompt.json fails the cold start instead of silently not substituting.",
+    "output_language": "<OUTPUT_LANGUAGE>",
+    "condition": "<TARGET_CONDITION>",
+    "criteria": "<TOD_CRITERIA>",
+    "narrative": "<RAW_NARRATIVE_LOG>"
+  },
+  "report_blocks": {
+    "separator": "§§§",
+    "blocks": [
+      {
+        "id": "applicant_statement",
+        "en": "APPLICANT STATEMENT",
+        "fr": "DÉCLARATION DU DEMANDEUR"
+      },
+      {
+        "id": "quality_of_life",
+        "en": "QUALITY OF LIFE",
+        "fr": "QUALITÉ DE VIE"
+      },
+      {
+        "id": "private_claim",
+        "en": "PRIVATE CLAIM",
+        "fr": "RÉCLAMATION PRIVÉE"
+      }
+    ]
+  },
+  "_report_blocks_note": "VAC = 3 blocks. private_claim is the sole-input block: its source question must be marked required+role in the question bank (SPEC 04.8). CPP = 8 blocks.",
+  "question_roles": {
+    "_what": "ROLE MARKERS FOR THE QUESTION BANK, SPEC 04.8. A role names ONE question per (condition, language) slice and marks it structurally special - today that means REQUIRED. The engine resolves each role to a concrete question number at BUILD time and refuses to build if it cannot, then stamps the numbers into the compiled asset. Runtime looks up a role; it never matches text and never counts positions, because position varies by condition and a hardcoded name does not survive a pack edit.",
+    "_why_it_is_here_and_not_in_the_csv": "04.8 asks for the marker in PACK CONTENT. The CSV export carries no role column, and adding one is 838 rows of authoring; this is the same declaration in the file the engine already reads. It lives in the PACK rather than in the engine because the engine must not name the product it serves - that is what lets a second pack be dropped in, and companion-source/tests/test_grep_zero.py enforces it.",
+    "_measured_2026-08-08": "The match below resolves to 46 questions, exactly one per slice across 23 conditions and 2 languages. Every one is answer_type single, every one carries an empty depends_on_question, and every one is the highest question_number in its slice. So it is already unskippable, unbranchable and last; the gates turn those measured facts into build failures if they ever stop being true.",
+    "_note_for_anyone_searching": "No question in the 838 rows contains the word private, in either language. The REPORT BLOCK is called PRIVATE CLAIM; the question that feeds it asks about payment from a workers compensation board or another third party.",
+    "roles": {
+      "private_claim": {
+        "required": true,
+        "must_resolve_in_every_slice": true,
+        "must_not_be_conditional": true,
+        "answer_type_in": ["single", "multi"],
+        "match": {
+          "en_ca": {"text_contains_all": ["Workers' Compensation Board", "third party"]},
+          "fr_ca": {"text_contains_all": ["commission des accidents du travail", "tiers"]}
+        }
+      }
+    }
+  },
+  "crisis_resources": {
+    "_note": "REQUIRED field (SPEC 01). LIST SHAPE (resources[]), not the legacy single-helpline shape: the VAC policy names more than one line and the legacy shape collapses to exactly one, which would have displayed one of the two numbers we published. Parsed by web-frontend/src/crisis/resources.ts; the renderer prints the label and then the number, so a label must NOT repeat its own number. /!\\ THIS PACK NO LONGER SETS DISPLAY ORDER, AND THE SENTENCE THAT SAID IT DID WAS TRUE WHEN WRITTEN AND FALSE BY 2026-08-04. ruling made the engine crisis floor always delivered and non-replaceable: 988 is rendered FIRST by mvf_pack_safety.crisis_lines_or_default and again by web-frontend applyCrisisFloor, then this pack's resources are APPENDED. A pack may add and may never replace, reorder or remove. The order below is therefore authoring order, not display order. It is kept as written because the reason still holds for a different question: the official VAC emergency page puts the veteran-specific line under 'You are thinking about suicide', which is why 1-800-268-7708 must never be dropped from this list, not why it appears first. Deduping is on tel, so the 988 entry below is dropped in favour of the floor's; its labels are byte-identical to ENGINE_DEFAULT_CRISIS in both languages, so nothing a veteran reads is lost. If those labels are ever edited here they will silently stop reaching anyone.",
+    "_verified": "WHAT WAS CHECKED, STATED SEPARATELY FROM WHAT WAS NOT, because CPP named the distinction on 2026-08-04 and it applies here. CHECKED: every number below is PUBLISHED BY AN OFFICIAL GOVERNMENT OF CANADA SOURCE for this purpose, read on 2026-08-02. 988: 988.ca, EN and FR. 1-800-268-7708 and the 1-800-567-5803 TDD/TTY line: the veterans.gc.ca emergency telephone numbers page (EN) and veterans.gc.ca/fr/contact/talk-to-a-professional (FR), both stating 24 hours a day, 365 days a year. /!\\ NOT CHECKED: NOBODY HAS DIALLED THEM. The earlier wording here said each number REACHES a Canadian service, which is a claim about what happens when a veteran in crisis presses call, and it rested on a LISTING check. Those are different facts and this pack now says so. /!\\ AND THIS PACK HOLDS ITS OWN COUNTEREXAMPLE, which is why the distinction is not pedantic: OSI-CAN is deliberately absent because a number in an earlier draft REACHED A US SERVICE. Where a number goes is not settled by where it is printed. RE-VERIFY BEFORE EACH RELEASE. Any number that cannot be confirmed against an official source is left OUT and recorded as UNVERIFIED rather than guessed.",
+    "_speakable_note": "NOT DISPLAYED, NOT CRISIS RESOURCES. The crisis band renders resources[] only. These are numbers the chat may SAY: mvf_tel_guard allows every number found in this manifest, so listing them here stops it masking the VAC general line. Read 2026-10-04 from https://www.veterans.gc.ca/en/contact.",
+    "speakable_lines": [
+      {"tel": "1-866-522-2122", "label_en": "VAC main line, toll-free, Monday to Friday 8:30 to 4:30 local time"},
+      {"tel": "1-833-921-0071", "label_en": "VAC TDD/TTY line, same hours"}
+    ],
+    "label_en": "VETERAN & RCMP CRISIS SUPPORT SHIELD",
+    "label_fr": "BOUCLIER DE SOUTIEN EN CRISE - VÉTÉRANS ET GRC",
+    "resources": [
+      {
+        "tel": "1-800-268-7708",
+        "label_en": "VAC Assistance Service, 24/7, Veterans, former RCMP members and their families",
+        "label_fr": "Service d'aide d'ACC, 24/7, vétérans, anciens membres de la GRC et leurs familles"
+      },
+      {
+        "tel": "988",
+        "label_en": "Suicide Crisis Helpline, 24/7, call or text",
+        "label_fr": "Ligne d'aide en cas de crise de suicide, 24/7, appel ou texto"
+      },
+      {
+        "tel": "1-800-567-5803",
+        "label_en": "VAC Assistance Service, TDD/TTY line for deaf and hard of hearing callers, 24/7",
+        "label_fr": "Service d'aide d'ACC, ligne ATS pour personnes sourdes ou malentendantes, 24/7"
+      }
+    ]
+  },
+  "practitioner_routing": {
+    "_note": "REQUIRED for ruling. The practitioner route was the ONLY one of its three requirements with no pack source, so it was the only one depending on the model saying it, and it is the one that failed: CA measured Nova returning no route to a veteran describing frequent thoughts of suicide. Crisis resources and citations score structurally because the engine composes them from pack content that never passes through the model. This block lets the route join them.",
+    "_contract": "ruling. THE KEY AND FIELD NAMES ARE THE ENGINE'S, NOT MINE: mvf_pack_safety.practitioner_line() reads manifest.practitioner_routing.text_<lang>. I first shipped this as practitioner_route with label_en/label_fr and a lines[] array, mirroring crisis_resources, and the engine reader returned None for it. That is the crisis_lines defect with the sides swapped: there, the code and its fixture agreed and neither agreed with the pack; here, the pack and its test agreed and neither agreed with the reader. THE LESSON IS THE SAME ONE: read the consumer before choosing a shape. tests/test_practitioner_route.py now calls the ENGINE reader against this manifest rather than a reimplementation of it.",
+    "_when": "ROUTE MODE ONLY, the rule structural_tail already applies. In translate mode the veteran has a clinician-established diagnosis, and appending this to every turn teaches people to skip past it, which makes it worthless on the turn that matters.",
+    "_voice": "Two sentences, not a leaflet. The first says why a provider is the step the claim runs on rather than a detour, because a route that reads as a brush-off is the failure the two-part distress rule exists to prevent. The second is what to ask for, so the veteran leaves the appointment with the thing the claim needs. NO TELEPHONE NUMBER HERE: numbers live in crisis_resources and a second copy is the one that goes stale. The words are pack content on purpose; the engine deliberately carries no default, because an engine-side default would be the engine putting clinical routing language in front of a veteran.",
+    "text_en": "A diagnosis has to come from a health care provider. A VAC claim cannot succeed without one, so seeing a doctor is the step the claim runs on rather than a detour. Ask your provider to write down the diagnosis, the date it was made, and how it connects to your service: those three things are what the claim needs from them. If you do not have one, a walk-in clinic, a community health centre, or your provincial health line can help you find care.",
+    "text_fr": "Un diagnostic doit venir d'un professionnel de la santé. Une demande à ACC ne peut pas aboutir sans lui, donc consulter un médecin n'est pas un détour : c'est l'étape sur laquelle repose la demande. Demandez à votre professionnel de la santé d'écrire le diagnostic, la date à laquelle il a été posé, et le lien avec votre service : ce sont ces trois éléments dont la demande a besoin. Si vous n'en avez pas, une clinique sans rendez-vous, un centre de santé communautaire ou la ligne santé de votre province peut vous aider à trouver des soins.",
+    "_no_provider_clause": "The final sentence of text_en and text_fr is CPP's, taken VERBATIM from pack-cpp/manifest.json rather than re-authored, on the operator's instruction. CA's verdict on this route was NOT CLEARED because both texts assumed the veteran HAS a provider: 'ask your provider' delivers nothing to someone who does not have one, which after release is the common case. Two packs saying the same thing in two wordings is the drift ruling exists to stop, so the clause is copied, not rewritten. If CPP corrects theirs, correct this to match rather than editing it here."
+  },
+  "opsec_notice": {
+    "_note": "REQUIRED for ruling. Operational-security guidance: classified and operationally sensitive information does not belong in a claim, and the assistant should say so once and not carry it forward. This is pack-level protection (VAC users may owe a duty of non-disclosure) not platform-level default (ArrowMem is a general assistant). mvf_pack_grounding.opsec_addition appends this to the system prompt when the pack declares it; absent, the model gets nothing OPSEC-specific and the platform prompt alone still holds every user-facing safety property. THE ENGINE NEVER AUTHORS THIS TEXT - it comes from the pack's own safety policy.",
+    "text_en": "Your first message says, briefly and without drama, that their duty not to disclose classified or operationally sensitive information does not end when they leave, and that the claim does not need any of it.\n\nSay it once, in plain words, and then get on with helping them. It is a reminder between professionals, not a warning to a suspect. Do not repeat it every turn and do not lecture.\n\nWhat they should keep out: unit and sub-unit names, base and location pairings, operation names, mission specifics, tactics and procedures, capabilities, the names of other people, and anything still classified.\n\nNone of it is needed. A claim is built from what happened to their body and mind and what it costs them now. \"A loud explosion close to me during a training exercise in 2011\" carries exactly the same evidentiary weight as the version with the unit and the grid reference, and one of them can get a veteran in trouble.\n\nIf they start giving you operational detail, say once that they do not need to tell you that part, and ask them for the effect on them instead. Do not repeat the detail back to them, do not summarise it, and do not use it in anything you draft.\n\n⚠️ If they have already written something sensitive, do not tell them their words are unsafe or alarm them. Simply do not carry it forward, and shape the draft around what happened to them.",
+    "text_fr": "Votre premier message dit, brièvement et sans drame, que le devoir du vétéran de ne pas divulguer des informations classifiées ou opérationnellement sensibles ne prend pas fin au départ, et que la demande n'en a aucun besoin.\n\nDites-le une fois, dans des mots simples, puis continuez à l'aider. C'est un rappel entre professionnels, pas un avertissement à un suspect. Ne le répétez pas à chaque tour et ne faites pas de sermon.\n\nCe qu'il devrait garder secret : les noms d'unité et de sous-unité, les appairements de bases et d'emplacements, les noms d'opérations, les détails de missions, les tactiques et les procédures, les capacités, les noms d'autres personnes, et tout ce qui demeure classifié.\n\nRien n'est nécessaire. Une demande est construite à partir de ce qui s'est passé dans le corps et l'esprit du vétéran et ce que cela lui coûte maintenant. « Une explosion forte près de moi pendant un exercice d'entraînement en 2011 » porte exactement le même poids probant que la version avec l'unité et la référence de grille, et l'une ou l'autre peut causer des problèmes à un vétéran.\n\nSi le vétéran commence à vous donner des détails opérationnels, dites une fois qu'il n'a pas besoin de vous le dire, et demandez-lui plutôt l'effet sur lui. Ne répétez pas les détails, ne les résumez pas, et ne les utilisez pas dans ce que vous rédigez.\n\n⚠️ Si le vétéran a déjà écrit quelque chose de sensible, ne lui dites pas que ses paroles sont dangereuses et ne l'alarmez pas. Simplement, ne les reprenez pas, et structurez le brouillon autour de ce qui s'est passé pour lui."
+  },
+  "claim_framing": {
+    "_note": "Companion to opsec_notice, same day, same pattern (see companion-source commit adding mvf_pack_grounding.claim_framing_addition). companion-source's route.txt stopped assuming every conversation is a claim (the pack picker is now the front door, and 'everyday memory and chat' must reach a prompt that has never heard of claims). The claim-specific narrative-elicitation depth that used to be in route.txt's WHAT YOU DO and THEIR WORDS ARE THE POINT sections - the ordinary-and-concrete functional-impact questions, and 'their words are the strongest evidence' - moved here, verbatim in meaning, so the claim branch does not lose it. THE ENGINE INJECTS THIS ONLY WHEN THE CLIENT HAS SENT A `condition` FIELD (claim_framing_addition's own gate) - it never reaches an everyday-memory conversation, because that branch never sends one.",
+    "text_en": "Right now they are working on describing a condition for a claim. Ask about the ordinary and the concrete: what they can no longer do, what it stops them from doing, what a bad day looks like, what they have stopped doing without noticing.\n\nTheir own words are the strongest evidence they have. If they say their knee gives out on stairs, that carries more weight than a medical term for it - do not translate it into one.",
+    "text_fr": "En ce moment, la personne travaille à décrire une affection pour une demande. Posez des questions sur l'ordinaire et le concret : ce qu'elle ne peut plus faire, ce que cela l'empêche de faire, à quoi ressemble une mauvaise journée, ce qu'elle a cessé de faire sans même s'en apercevoir.\n\nSes propres mots sont la meilleure preuve qu'elle possède. Si elle dit que son genou lâche dans les escaliers, cela pèse plus lourd qu'un terme médical pour le décrire : ne le traduisez pas."
+  },
+  "packages": {
+    "_note": "Package DEFINITIONS (reports/expiry/transcribe) live in engine code (stripe_webhook PRICE_MAP), keyed by these ids; the price IDs are per-deployment env vars (MVF_PRICE_1REPORT / MVF_PRICE_3REPORT), NOT pack content.",
+    "ids": [
+      "1report",
+      "3report"
+    ]
+  },
+  "_note_grant": "POST /grant refused EVERY request until 2026-08-05 because no shipped pack declared these. grant_handler._pack_for returns None unless the staged manifest's pack_id matches the requested one, and None is what produces PACK_UNKNOWN 400. The endpoint could not succeed for anyone, on either pack.",
+  "_pack_id": "⚠️ CHOSEN, NOT INHERITED, AND FLAGGED FOR REVIEW. No prior value existed anywhere: no test fixture, no client, no design document names one. It is set equal to `product` because one deployment serves one pack today, so the two are the same fact. IF A DEPLOYMENT EVER SERVES SEVERAL PACKS, pack_id becomes the real discriminator and product does not, and this equality must be broken deliberately rather than discovered. Distinct from the 16-byte pack_id in the signed grant label, which is a binary identifier the worker derives; this is the HTTP string.",
+  "pack_id": "vac",
+  "generation": 1,
+  "_scopes": "SCOPES ARE DECLARED PER PACK, NEVER AS AN ENUM IN src/. ONBOARDING_AND_CONSENT section 8 item 5. Six scopes exist in that document; this pack declares only the ones the shipped product can actually exercise, because a declared scope is a purpose a veteran can consent to and consenting to something that cannot happen is not consent, it is noise in the record. WITHHELD AND WHAT FLIPS EACH: voice_input, no client call to /transcribe exists in web-frontend/src/api - flips when one does. voice_output, not built. documents, capture and OCR exist in no repo, which is the same measurement that killed the landing paperwork row. Adding one later is a manifest edit plus its consent text, not a code change.",
+  "scopes": [
+    "core",
+    "assistant",
+    "cross_border"
+  ],
+  "_consent_versions": "scope -> the version of the consent text currently published. effective_scopes treats a consent given under an older version as NOT covering the new wording, which is what stops a reworded disclosure silently widening a permission somebody already gave. Starts at 1; BUMP IT WHEN THE CONSENT TEXT CHANGES, never when the code does.",
+  "consent_versions": {
+    "core": 2,
+    "assistant": 1,
+    "cross_border": 1
+  }
+}

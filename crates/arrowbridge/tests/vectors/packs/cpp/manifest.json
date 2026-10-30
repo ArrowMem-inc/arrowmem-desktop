@@ -1,0 +1,131 @@
+{
+  "product": "cpp",
+  "_name_note": "INTEGRATED FORM, DELIBERATE. Was \"My CPP Form\" until 2026-08-01. Spaced into three words, \"CPP\" stands alone in the wordmark position, which is the separated presentation ICBC v Stainton Ventures (2014 BCCA 296) treated as a s.11 breach, while the integrated ICBCadvice.ca use survived. Two live s.9 official marks for \"CPP\" are held by ESDC. Every other surface in the product already uses the integrated form: the live site, the MCF wordmark, the generated report header, and both OTP templates. No engine handler reads this key today (the engine reads report_blocks, prompt_placeholders, support_email and languages only), so the change is free now and would not be once a UI renders it. Descriptive use of \"CPP\" in running text, e.g. \"CPP disability application\", is fine and is the subject-not-owner use the case law protects. See docs/CPP/STAINTON_MARK_AUDIT_2026-08-01.md.",
+  "name": "Canada Pension Plan disability",
+  "domain": "mycppform.ca",
+  "support_email": "support@arrowmem.ca",
+  "_languages_note": "REQUIRED, and a MAP not a list. Each entry carries what the engine cannot derive: criteria_key is the language key used in tod_name_map and the criteria table (it REPLACES a positional out_lang[:2] slice, which silently produced the wrong key for any subtag that is not exactly 2 characters); transcribe is the AWS Transcribe LanguageCode, which is NOT derivable from the app code (en_ca maps to en-US while fr_ca maps to fr-CA, and no single rule produces both); vocab_env names the DEPLOYMENT env var holding the custom-vocabulary name for this language. The set of keys here MUST equal the set of languages in the questions CSV; the build fails if they differ.",
+  "languages": {
+    "en_ca": {
+      "criteria_key": "en",
+      "transcribe": "en-US",
+      "vocab_env": "VOCAB_NAME_EN"
+    },
+    "fr_ca": {
+      "criteria_key": "fr",
+      "transcribe": "fr-CA",
+      "vocab_env": "VOCAB_NAME_FR"
+    }
+  },
+  "government_form": "ISP-1151, Canada Pension Plan disability benefit",
+  "_retention_instructions": "AUDIT INDEX, not read by the engine. Names every file in this pack that instructs the generated draft to RETAIN a personal identifier, because retention is decided in more than one file and an audit that reads only prompt.json will produce a confidently incomplete answer. (1) prompt.json, NAMES RULE + FINAL CHECK: clinician names, employer company names and job titles are KEPT as the applicant stated them; co-workers, supervisors, family members and other private individuals are ROLE-REPLACED. (2) tod_criteria/CPP_ADJUDICATION_CONTEXT_EN-FR_v1_2026-07-10.csv, BOTH language rows: hospitalization PLACES and dates are kept as given - this is the one that hides, and it is why this index exists. Nothing in questions/ instructs retention; the question set never asks for a clinician, facility or individual's name, so every such identifier is volunteered rather than solicited. Adding a retention instruction to any pack file means adding it here. See docs/CPP/RULING_FACILITY_AND_THIRD_PARTY_DISCLOSURE_2026-08-01.md.",
+  "content": {
+    "questions_csv": "questions/MYCPP_Universal_75q_conditionals_EN-FR_v3_2026-07-13.csv",
+    "tod_criteria_dir": "tod_criteria",
+    "conditions": "conditions.json",
+    "prompt": "prompt.json",
+    "promo_seed": "promo_codes/promo_seed.json"
+  },
+  "_screening_note": "content.screening is DELIBERATELY NOT DECLARED YET. The shape is agreed (two eligibility questions, three stop states with the COMBINED state evaluated first, per-language links) but the EN/FR copy is not yet in the pack, and a manifest path pointing at a file that does not exist is a trap. Add content.screening = screening.json in the same commit that adds the file, never before.",
+  "prompt_placeholders": {
+    "_note": "The four substitution tokens in prompt.json's user template. DECLARED here because the CPP formatter's names are NOT the engine's historical VAC-shaped names: CPP has no single 'target condition' and no 'TOD criteria', so <MAIN_CONDITIONS> and <CPP_ADJUDICATION_CONTEXT> are the accurate names for this product. VERIFIED CLOSED 2026-08-03 against the engine source, not assumed: generate_handler._require_prompt_placeholders reads THIS map, carries no default, and fails at import if a declared token is absent from prompt.json. All four of these resolve, so the substitution defect this note was written for no longer exists.",
+    "output_language": "<OUTPUT_LANGUAGE>",
+    "condition": "<MAIN_CONDITIONS>",
+    "criteria": "<CPP_ADJUDICATION_CONTEXT>",
+    "narrative": "<RAW_NARRATIVE_LOG>"
+  },
+  "report_blocks": {
+    "separator": "§§§",
+    "blocks": [
+      {
+        "id": "main_medical_conditions",
+        "en": "MAIN MEDICAL CONDITIONS",
+        "fr": "PRINCIPAUX PROBLÈMES DE SANTÉ"
+      },
+      {
+        "id": "aids_used",
+        "en": "AIDS USED",
+        "fr": "AIDES UTILISÉES"
+      },
+      {
+        "id": "physical_abilities",
+        "en": "PHYSICAL ABILITIES",
+        "fr": "CAPACITÉS PHYSIQUES"
+      },
+      {
+        "id": "behavioural_emotional_abilities",
+        "en": "BEHAVIOURS AND EMOTIONAL ABILITIES",
+        "fr": "COMPORTEMENTS ET CAPACITÉS ÉMOTIONNELLES"
+      },
+      {
+        "id": "communication_thinking_abilities",
+        "en": "COMMUNICATION AND THINKING ABILITIES",
+        "fr": "COMMUNICATION ET CAPACITÉS DE RÉFLEXION"
+      },
+      {
+        "id": "other_daily_abilities",
+        "en": "OTHER DAILY ABILITIES",
+        "fr": "AUTRES CAPACITÉS AU QUOTIDIEN"
+      },
+      {
+        "id": "work_duties",
+        "en": "WORK DUTIES",
+        "fr": "TÂCHES AU TRAVAIL"
+      },
+      {
+        "id": "lighter_or_different_work",
+        "en": "LIGHTER OR DIFFERENT WORK",
+        "fr": "EMPLOI PLUS LÉGER OU AUTRE GENRE DE TRAVAIL"
+      }
+    ]
+  },
+  "_report_blocks_note": "CPP = 8 blocks / 7 separators (VAC = 3 / 2). Block names are VERBATIM from prompt.json (formatter v1-3, 2026-07-16), which is the file the engine actually renders from. The two ADJ CONTEXT files in tod_criteria/ DISAGREE with this list and with each other (EN has 7 and omits AIDS USED, FR has 8). That is an unresolved CONTENT discrepancy for a human; the manifest follows the formatter because a manifest that disagrees with the formatter is what breaks generation. There is no sole-input block: unlike VAC's private_claim, every CPP block is derived from the universal question set.",
+  "question_roles": {
+    "_what": "ROLE MARKERS FOR THE QUESTION BANK, SPEC 04.8. A role names ONE question per (condition, language) slice and marks it required, so the engine can refuse to finish a claim without it. Declared here rather than in the engine because the engine must not name the product it serves.",
+    "_why_it_is_empty": "The report-blocks note above settles it: there is no sole-input block in this pack, so there is nothing for 04.8's rule to attach to. The empty object is the ANSWER, not an omission - the compiler refuses to build a pack that declares nothing at all, precisely so a missing gate cannot be mistaken for a deliberate absence.",
+    "_when_to_revisit": "The moment any report block becomes single-input, or the universal question set gains a compensation question of its own. The failure mode is silent: generation would produce a block from nothing, which is the hallucinated output that made this a hard gate elsewhere instead of a prompt instruction.",
+    "roles": {}
+  },
+  "crisis_resources": {
+    "label_en": "CRISIS SUPPORT",
+    "label_fr": "SOUTIEN EN CAS DE CRISE",
+    "_shape_note": "RESHAPED 2026-08-03 to the contract the engine actually reads: crisis_lines() in src/mvf_pack_safety.py iterates crisis_resources.resources and takes {tel, label_en, label_fr}. The previous flat helpline_tel / helpline_label_* keys were NOT in that shape, so crisis_lines() returned ZERO lines for this pack and the crisis resources were structurally absent. That is the exact failure ruling's blocking condition exists to prevent, and it was invisible because nothing read the field. The old keys are removed rather than kept alongside: two shapes means one of them is the one nobody maintains.",
+    "_label_rule": "A LABEL MUST NOT REPEAT ITS OWN NUMBER. The renderer prints 'label: tel', so the previous label 'Call or text 9-8-8 (Suicide Crisis Helpline, 24/7)' would have rendered as '...9-8-8...: 988', showing the number twice to someone in crisis. Labels below name the service and its hours only.",
+    "resources": [
+      {
+        "tel": "988",
+        "label_en": "Suicide Crisis Helpline, call or text, 24/7",
+        "label_fr": "Ligne d'aide en cas de crise de suicide, par appel ou texto, 24/7"
+      }
+    ],
+    "_note": "REQUIRED field (SPEC 01). CPP applicants are the general public, NOT veterans, so VAC's Veteran and RCMP crisis shield is WRONG here. 9-8-8 is the line already named in the published CPP privacy policy (EN and FR v1-6), in the Terms, and dialled by the live Bubble app's crisis footer as tel:988 - four places, consistent. ONE resource only, deliberately: no second number is officially verified for this audience, and the standing rule is that a gap beats a wrong crisis number. TWO CHECKS, NOT ONE, AND THEY HAVE DIFFERENT ANSWERS AS OF 2026-08-04. SOURCE-VERIFIED: DONE, by the sibling pack lane, which recorded 988 as published by an official Government of Canada source for this purpose with the page named. DIAL-VERIFIED: NOT DONE, by anyone, for any number in this fleet. Those are different claims and only the weaker one is satisfied - a number can be correctly published and still not answer. The operator dialling it is the outstanding half, and it is the only half left."
+  },
+  "_practitioner_routing_note": "REQUIRED by structural_report() alongside crisis resources and citations. The engine reads practitioner_routing.text_<lang> and deliberately provides NO default, because an engine-side default would be the engine putting clinical routing language in front of a claimant. The words are pack content and therefore mine. WRITTEN FOR CPP'S AUDIENCE, NOT VAC'S: a CPP disability claimant is a member of the general public, so this must not assume a veteran's service-connected care pathway, an OSI clinic, or any VAC entitlement. It names the ordinary routes a person in Canada actually has. It is a ROUTE, not advice, and it never tells anyone what their condition is.",
+  "practitioner_routing": {
+    "text_en": "This tool cannot give medical advice or assess your health. If you are struggling with your health, please speak with your family doctor or nurse practitioner. If you do not have one, a walk-in clinic, a community health centre, or your provincial health line can help you find care.",
+    "text_fr": "Cet outil ne peut pas donner d'avis médical ni évaluer votre état de santé. Si votre santé vous inquiète, parlez-en à votre médecin de famille ou à votre infirmière praticienne ou infirmier praticien. Si vous n'en avez pas, une clinique sans rendez-vous, un centre de santé communautaire ou la ligne santé de votre province peut vous aider à trouver des soins."
+  },
+  "packages": {
+    "_note": "Package DEFINITIONS (reports/expiry/transcribe) live in engine code (stripe_webhook PRICE_MAP), keyed by these ids; the price IDs are per-deployment env vars (MVF_PRICE_1REPORT / MVF_PRICE_3REPORT), NOT pack content.",
+    "ids": [
+      "1report",
+      "3report"
+    ]
+  },
+  "_note_grant": "POST /grant refused EVERY request until 2026-08-05 because no shipped pack declared these. grant_handler._pack_for returns None unless the staged manifest's pack_id matches the requested one, and None is what produces PACK_UNKNOWN 400. The endpoint could not succeed for anyone, on either pack.",
+  "_pack_id": "⚠️ CHOSEN, NOT INHERITED, AND FLAGGED FOR REVIEW. No prior value existed anywhere: no test fixture, no client, no design document names one. It is set equal to `product` because one deployment serves one pack today, so the two are the same fact. IF A DEPLOYMENT EVER SERVES SEVERAL PACKS, pack_id becomes the real discriminator and product does not, and this equality must be broken deliberately rather than discovered. Distinct from the 16-byte pack_id in the signed grant label, which is a binary identifier the worker derives; this is the HTTP string.",
+  "pack_id": "cpp",
+  "generation": 1,
+  "_scopes": "SCOPES ARE DECLARED PER PACK, NEVER AS AN ENUM IN src/. ONBOARDING_AND_CONSENT section 8 item 5. Six scopes exist in that document; this pack declares only the ones the shipped product can actually exercise, because a declared scope is a purpose a veteran can consent to and consenting to something that cannot happen is not consent, it is noise in the record. WITHHELD AND WHAT FLIPS EACH: voice_input, no client call to /transcribe exists in web-frontend/src/api - flips when one does. voice_output, not built. documents, capture and OCR exist in no repo, which is the same measurement that killed the landing paperwork row. Adding one later is a manifest edit plus its consent text, not a code change.",
+  "scopes": [
+    "core",
+    "assistant",
+    "cross_border"
+  ],
+  "_consent_versions": "scope -> the version of the consent text currently published. effective_scopes treats a consent given under an older version as NOT covering the new wording, which is what stops a reworded disclosure silently widening a permission somebody already gave. Starts at 1; BUMP IT WHEN THE CONSENT TEXT CHANGES, never when the code does.",
+  "consent_versions": {
+    "core": 1,
+    "assistant": 1,
+    "cross_border": 1
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Home window: core only, no shell, and only the pairing and status commands",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "allow-home-view",
+    "allow-restart-service",
+    "allow-model-options",
+    "allow-model-download",
+    "allow-model-choose",
+    "allow-open-pairing",
+    "allow-pair-state",
+    "allow-pair-confirm",
+    "allow-pair-cancel",
+    "allow-retry-firewall",
+    "allow-status-texts"
+  ]
+}

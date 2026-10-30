@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "uninstall",
+  "description": "Uninstall window: core only, no shell, and only the uninstall commands",
+  "windows": ["uninstall"],
+  "permissions": [
+    "core:default",
+    "allow-uninstall",
+    "allow-uninstall-texts"
+  ]
+}

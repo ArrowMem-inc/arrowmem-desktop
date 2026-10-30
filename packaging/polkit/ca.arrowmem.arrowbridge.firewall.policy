@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <vendor>ArrowMem</vendor>
+  <action id="ca.arrowmem.arrowbridge.firewall">
+    <description>Open or remove the ArrowBridge firewall rule</description>
+    <description xml:lang="fr">Ouvrir ou retirer la règle de pare-feu d'ArrowBridge</description>
+    <message>Authentication is required to open or remove the firewall rule that lets devices on the network this computer is connected to reach ArrowBridge (TCP port 8788).</message>
+    <message xml:lang="fr">Une authentification est requise pour ouvrir ou retirer la règle de pare-feu qui permet aux appareils du réseau auquel cet ordinateur est connecté de joindre ArrowBridge (port TCP 8788).</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/arrowmem/arrowbridge-fw</annotate>
+  </action>
+</policyconfig>

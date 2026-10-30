@@ -1,0 +1,1107 @@
+{
+ "alphabet": "0123456789ABCDEFGHJKMNPQRSTVWXYZ",
+ "good": [
+  {
+   "ip": "192.168.50.140",
+   "code": "200CMCVZ",
+   "shown": "200C-MCVZ"
+  },
+  {
+   "ip": "192.168.0.1",
+   "code": "20000177",
+   "shown": "2000-0177"
+  },
+  {
+   "ip": "192.168.255.254",
+   "code": "201ZZYJM",
+   "shown": "201Z-ZYJM"
+  },
+  {
+   "ip": "10.0.0.1",
+   "code": "2G00012J",
+   "shown": "2G00-012J"
+  },
+  {
+   "ip": "10.1.2.3",
+   "code": "2G20G3E1",
+   "shown": "2G20-G3E1"
+  },
+  {
+   "ip": "10.255.255.254",
+   "code": "2ZZZZYY1",
+   "shown": "2ZZZ-ZYY1"
+  },
+  {
+   "ip": "172.16.0.1",
+   "code": "300001CD",
+   "shown": "3000-01CD"
+  },
+  {
+   "ip": "172.31.255.254",
+   "code": "30ZZZYGQ",
+   "shown": "30ZZ-ZYGQ"
+  },
+  {
+   "ip": "172.20.5.9",
+   "code": "308189M8",
+   "shown": "3081-89M8"
+  },
+  {
+   "ip": "192.168.100.20",
+   "code": "200S0MRA",
+   "shown": "200S-0MRA"
+  }
+ ],
+ "bad": [
+  {
+   "code": "0000CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "1000CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "3000CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "4000CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "5000CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "6000CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "7000CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "8000CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "9000CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "A000CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "B000CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "C000CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "D000CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "E000CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "F000CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "G000CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "H000CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "J000CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "K000CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "M000CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "N000CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "P000CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "Q000CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "R000CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "S000CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "T000CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "V000CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "W000CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "X000CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "Y000CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "Z000CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2100CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2200CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2300CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2400CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2500CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2600CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2700CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2800CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2900CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2A00CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2B00CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2C00CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2D00CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2E00CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2F00CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2G00CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2H00CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2J00CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2K00CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2M00CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2N00CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2P00CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2Q00CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2R00CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2S00CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2T00CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2V00CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2W00CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2X00CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2Y00CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2Z00CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2010CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2020CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2030CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2040CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2050CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2060CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2070CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2080CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2090CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "20A0CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "20B0CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "20C0CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "20D0CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "20E0CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "20F0CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "20G0CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "20H0CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "20J0CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "20K0CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "20M0CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "20N0CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "20P0CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "20Q0CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "20R0CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "20S0CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "20T0CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "20V0CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "20W0CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "20X0CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "20Y0CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "20Z0CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2001CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2002CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2003CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2004CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2005CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2006CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2007CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2008CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2009CCEM",
+   "why": "typo"
+  },
+  {
+   "code": "200ACCEM",
+   "why": "typo"
+  },
+  {
+   "code": "200BCCEM",
+   "why": "typo"
+  },
+  {
+   "code": "200CCCEM",
+   "why": "typo"
+  },
+  {
+   "code": "200DCCEM",
+   "why": "typo"
+  },
+  {
+   "code": "200ECCEM",
+   "why": "typo"
+  },
+  {
+   "code": "200FCCEM",
+   "why": "typo"
+  },
+  {
+   "code": "200GCCEM",
+   "why": "typo"
+  },
+  {
+   "code": "200HCCEM",
+   "why": "typo"
+  },
+  {
+   "code": "200JCCEM",
+   "why": "typo"
+  },
+  {
+   "code": "200KCCEM",
+   "why": "typo"
+  },
+  {
+   "code": "200MCCEM",
+   "why": "typo"
+  },
+  {
+   "code": "200NCCEM",
+   "why": "typo"
+  },
+  {
+   "code": "200PCCEM",
+   "why": "typo"
+  },
+  {
+   "code": "200QCCEM",
+   "why": "typo"
+  },
+  {
+   "code": "200RCCEM",
+   "why": "typo"
+  },
+  {
+   "code": "200SCCEM",
+   "why": "typo"
+  },
+  {
+   "code": "200TCCEM",
+   "why": "typo"
+  },
+  {
+   "code": "200VCCEM",
+   "why": "typo"
+  },
+  {
+   "code": "200WCCEM",
+   "why": "typo"
+  },
+  {
+   "code": "200XCCEM",
+   "why": "typo"
+  },
+  {
+   "code": "200YCCEM",
+   "why": "typo"
+  },
+  {
+   "code": "200ZCCEM",
+   "why": "typo"
+  },
+  {
+   "code": "20000CEM",
+   "why": "typo"
+  },
+  {
+   "code": "20001CEM",
+   "why": "typo"
+  },
+  {
+   "code": "20002CEM",
+   "why": "typo"
+  },
+  {
+   "code": "20003CEM",
+   "why": "typo"
+  },
+  {
+   "code": "20004CEM",
+   "why": "typo"
+  },
+  {
+   "code": "20005CEM",
+   "why": "typo"
+  },
+  {
+   "code": "20006CEM",
+   "why": "typo"
+  },
+  {
+   "code": "20007CEM",
+   "why": "typo"
+  },
+  {
+   "code": "20008CEM",
+   "why": "typo"
+  },
+  {
+   "code": "20009CEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000ACEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000BCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000DCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000ECEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000FCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000GCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000HCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000JCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000KCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000MCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000NCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000PCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000QCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000RCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000SCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000TCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000VCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000WCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000XCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000YCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000ZCEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000C0EM",
+   "why": "typo"
+  },
+  {
+   "code": "2000C1EM",
+   "why": "typo"
+  },
+  {
+   "code": "2000C2EM",
+   "why": "typo"
+  },
+  {
+   "code": "2000C3EM",
+   "why": "typo"
+  },
+  {
+   "code": "2000C4EM",
+   "why": "typo"
+  },
+  {
+   "code": "2000C5EM",
+   "why": "typo"
+  },
+  {
+   "code": "2000C6EM",
+   "why": "typo"
+  },
+  {
+   "code": "2000C7EM",
+   "why": "typo"
+  },
+  {
+   "code": "2000C8EM",
+   "why": "typo"
+  },
+  {
+   "code": "2000C9EM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CAEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CBEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CDEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CEEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CFEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CGEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CHEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CJEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CKEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CMEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CNEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CPEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CQEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CREM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CSEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CTEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CVEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CWEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CXEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CYEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CZEM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CC0M",
+   "why": "typo"
+  },
+  {
+   "code": "2000CC1M",
+   "why": "typo"
+  },
+  {
+   "code": "2000CC2M",
+   "why": "typo"
+  },
+  {
+   "code": "2000CC3M",
+   "why": "typo"
+  },
+  {
+   "code": "2000CC4M",
+   "why": "typo"
+  },
+  {
+   "code": "2000CC5M",
+   "why": "typo"
+  },
+  {
+   "code": "2000CC6M",
+   "why": "typo"
+  },
+  {
+   "code": "2000CC7M",
+   "why": "typo"
+  },
+  {
+   "code": "2000CC8M",
+   "why": "typo"
+  },
+  {
+   "code": "2000CC9M",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCAM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCBM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCCM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCDM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCFM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCGM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCHM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCJM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCKM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCMM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCNM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCPM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCQM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCRM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCSM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCTM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCVM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCWM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCXM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCYM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCZM",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCE0",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCE1",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCE2",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCE3",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCE4",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCE5",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCE6",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCE7",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCE8",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCE9",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCEA",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCEB",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCEC",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCED",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCEE",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCEF",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCEG",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCEH",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCEJ",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCEK",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCEN",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCEP",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCEQ",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCER",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCES",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCET",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCEV",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCEW",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCEX",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCEY",
+   "why": "typo"
+  },
+  {
+   "code": "2000CCEZ",
+   "why": "typo"
+  },
+  {
+   "code": "0200CCEM",
+   "why": "swap"
+  },
+  {
+   "code": "200C0CEM",
+   "why": "swap"
+  },
+  {
+   "code": "2000CECM",
+   "why": "swap"
+  },
+  {
+   "code": "2000CCME",
+   "why": "swap"
+  },
+  {
+   "code": "3G00019R",
+   "why": "reserved range"
+  },
+  {
+   "code": "20208112",
+   "why": "192.168 upper host bits not zero"
+  },
+  {
+   "code": "310005XT",
+   "why": "172 upper host bits not zero (bit 20)"
+  }
+ ],
+ "newer": [
+  {
+   "code": "400081NR",
+   "why": "version 2"
+  },
+  {
+   "code": "Y00081V3",
+   "why": "version 15"
+  }
+ ],
+ "wrong_length": [
+  "",
+  "ABC",
+  "ABCDEFG",
+  "ABCDEFGHJ"
+ ],
+ "tolerated_spellings": [
+  {
+   "typed": "200cmcvz",
+   "ip": "192.168.50.140"
+  },
+  {
+   "typed": "200C-MCVZ",
+   "ip": "192.168.50.140"
+  },
+  {
+   "typed": " 200C MCVZ ",
+   "ip": "192.168.50.140"
+  }
+ ]
+}

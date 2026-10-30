@@ -1,0 +1,43 @@
+ARROWMEM HELP: setting up and using ArrowBridge (connecting the app to a computer the person owns)
+
+Before you start. You need a computer at home that runs the ArrowBridge companion and an AI model, switched on and awake. Tailscale must be running on the computer and on this phone, signed in to the same Tailscale account. Connecting your own machine is included with the Sync plan.
+
+Connect.
+1. Unlock your vault in ArrowMem. (If it is locked you will be asked to unlock it first.)
+2. Go to Account and tap Connect your machine.
+3. On the computer, open the companion's page and click Start pairing. It shows a QR code.
+4. On the phone, scan the QR code, or paste the code text.
+5. Your phone may ask to allow arrowmem.ca to reach devices on your network. Tap Allow.
+6. Check that the four digits on the phone are the same as the four on the computer, then tap They match. If the four digits are different, do not tap They match. Tap They do not match, and start again.
+7. On the computer, click Yes, that's my phone.
+8. The phone says Connected to your machine's name. That is the whole setup.
+You have 10 minutes from Start pairing to finish. After that, start again.
+
+Chat with it. In chat, choose On my machine. The first answer can be slow while the model loads on your computer. Later answers are faster. Answers from a smaller model may be less accurate than the cloud options.
+
+What "Connected to" means. This phone has saved your machine and can reach it. It does not mean the machine is awake right now.
+
+Forget. Forget this machine on this phone removes it from this phone only. It stays on your account's list, and nothing changes on the machine.
+
+If something fails.
+- "Unlock your vault to talk to your machine": unlock your vault, then try again.
+- "Your machine is not connected on this phone": open Account and connect it again.
+- "Your machine did not answer": check that it is on and awake, that Tailscale is running on both, and that the companion is running; then try again.
+- If the computer's companion was restarted, or the computer was restarted, the connection is lost: open Account and connect your machine again.
+- "We could not verify your machine at the saved address": nothing was sent. Reconnect your machine from Account.
+- "That is not a code from a machine": scan or paste the code from the companion's pairing page, not another QR code.
+- "This account already has a machine connected": one machine per account for now. (Removing a machine is a separate step when it ships.)
+- Nothing happens when you scan: check the Allow prompt was accepted and Tailscale is on, both devices.
+- Still stuck: write to support@arrowmem.ca.
+
+TROUBLESHOOTING. Give only the steps for the problem the person describes, in order, in their language. Add no steps of your own. If it still fails, say to write to support@arrowmem.ca.
+
+1. The Play Store says it cannot update or cannot download ArrowMem: try again; restart the phone; in Android Settings open Apps, then Google Play Store, then Storage, and clear the cache; check that the account signed in to the Play Store is the one invited to test or the one that bought; as a last step clear the Play Store storage (it keeps your apps, and it only signs you out of the Play Store). NEVER tell the person to uninstall ArrowMem first: uninstalling deletes the vault on that phone unless Sync is on or they used "Export my vault" first.
+
+2. Sync stays on "Turning on sync...": go back, open the Sync screen again and tap the button again; check that the Google account is the one you chose for Sync. The message "Turning on sync did not complete. Nothing has changed." means nothing was written, so trying again is safe.
+
+3. A restore says no synced vault was found, or shows an error: use the same Google account that turned Sync on, then try the look-up again. Do not start a new vault until that works, or the old one may be left behind.
+
+4. The machine is not connected: if the computer or its companion restarted, the connection is lost; open Account and connect your machine again.
+
+5. Sign-in goes back to the sign-in screen: close ArrowMem completely, open it and sign in again; if it repeats, write to support@arrowmem.ca and say which sign-in you used. Read-aloud says "This browser found no voice to read aloud with.": that device has no voice for it; everything else still works. To keep a copy of the vault, use "Export my vault".

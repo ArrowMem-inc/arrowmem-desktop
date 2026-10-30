@@ -1,0 +1,12 @@
+[package]
+name = "arrowbridge"
+version = "0.1.0"
+edition = "2021"
+description = "The ArrowMem companion in Rust: the safety gates, then the chat turn, channel, pairing and listeners (port of the Python companion, slice by slice)"
+publish = false
+
+[dependencies]
+fancy-regex = "=0.14.0"
+serde_json = { version = "1", features = ["preserve_order"] }
+regex = "=1.12.3"
+

@@ -1,0 +1,38 @@
+{
+ "en": {
+  "confirm": "This stops and removes ArrowBridge's two background services, its automatic start and its menu entry. Your paired phones are kept on this computer, in <folder>. The downloaded model is kept too, in <model_folder>. While the phones are kept, phones paired before can still connect if you install ArrowBridge again.",
+  "purge_checkbox": "Also delete all paired phones and the downloaded model",
+  "purge_note": "Every phone must pair again, and the model must be downloaded again, if you install ArrowBridge again.",
+  "done_kept": "ArrowBridge is uninstalled. Your paired phones were kept in <folder>, and the downloaded model was kept in <model_folder>. To remove the paired phones, delete <folder>. To remove the downloaded model, delete <model_folder>.",
+  "done_purged": "ArrowBridge is uninstalled. Your paired phones and the downloaded model were deleted. Every phone must pair again if you install ArrowBridge again.",
+  "firewall_removed": "The firewall rule was removed.",
+  "button_uninstall": "Yes, uninstall",
+  "button_cancel": "Cancel",
+  "problems": "The uninstall finished with problems:",
+  "menu_uninstall": "Uninstall",
+  "step_units": "background services",
+  "step_firewall": "firewall rule",
+  "step_autostart": "automatic start",
+  "step_launcher": "menu entry",
+  "step_purge_state": "paired phones",
+  "step_purge_models": "downloaded model"
+ },
+ "fr": {
+  "confirm": "Cela arrête et retire les deux services d'arrière-plan d'ArrowBridge, son démarrage automatique et son entrée de menu. Vos téléphones jumelés sont conservés sur cet ordinateur, dans <folder>. Le modèle téléchargé l'est aussi, dans <model_folder>. Tant que les téléphones sont conservés, les téléphones déjà jumelés peuvent se reconnecter si vous réinstallez ArrowBridge.",
+  "purge_checkbox": "Supprimer aussi tous les téléphones jumelés et le modèle téléchargé",
+  "purge_note": "Chaque téléphone devra être jumelé de nouveau, et le modèle devra être téléchargé de nouveau, si vous réinstallez ArrowBridge.",
+  "done_kept": "ArrowBridge est désinstallé. Vos téléphones jumelés ont été conservés dans <folder>, et le modèle téléchargé a été conservé dans <model_folder>. Pour retirer les téléphones jumelés, supprimez <folder>. Pour retirer le modèle téléchargé, supprimez <model_folder>.",
+  "done_purged": "ArrowBridge est désinstallé. Vos téléphones jumelés et le modèle téléchargé ont été supprimés. Chaque téléphone devra être jumelé de nouveau si vous réinstallez ArrowBridge.",
+  "firewall_removed": "La règle de pare-feu a été retirée.",
+  "button_uninstall": "Oui, désinstaller",
+  "button_cancel": "Annuler",
+  "problems": "La désinstallation s'est terminée avec des problèmes :",
+  "menu_uninstall": "Désinstaller",
+  "step_units": "services d'arrière-plan",
+  "step_firewall": "règle de pare-feu",
+  "step_autostart": "démarrage automatique",
+  "step_launcher": "entrée de menu",
+  "step_purge_state": "téléphones jumelés",
+  "step_purge_models": "modèle téléchargé"
+ }
+}

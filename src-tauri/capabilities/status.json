@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "status",
+  "description": "Status window: core only, no shell, and only the status commands",
+  "windows": ["status"],
+  "permissions": [
+    "core:default",
+    "allow-status-view",
+    "allow-retry-firewall",
+    "allow-status-texts"
+  ]
+}

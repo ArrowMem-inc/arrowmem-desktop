@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=ArrowMem
+Exec=/usr/bin/arrowmem-desktop
+Icon=arrowmem-desktop
+Terminal=false
+Categories=Utility;Network;

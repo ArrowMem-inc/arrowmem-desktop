@@ -1,0 +1,49 @@
+# Maintainer: ArrowMem <hello@arrowmem.ca>
+# The sidecars are built before makepkg, never fetched here: scripts/build-companion.sh (PyInstaller) writes
+# src-tauri/binaries/arrowbridge-companion-<triple>; `scripts/fetch-sidecars.sh <triple> both` downloads the two
+# llama-server builds pinned in models/manifest.json (Vulkan and CPU) and checks each size and sha256 before
+# extracting, into src-tauri/binaries/llama-vulkan and llama-cpu. The app finds all of it in /usr/lib/arrowmem
+# (supervisor::SYSTEM_SIDECAR_DIR) and picks the Vulkan build only when a render node and the Vulkan loader exist.
+# Local sources only: everything is installed from this checkout, nothing is fetched. Build the app first with
+# `cargo build --release` in src-tauri, then run makepkg in this directory.
+pkgname=arrowmem-desktop
+pkgver=0.1.0
+pkgrel=7
+pkgdesc="ArrowMem home machine app"
+arch=('x86_64')
+url="https://arrowmem.ca"
+license=('custom')
+# Tauri v2 runtime: the webview (webkit2gtk-4.1, on gtk3) and the tray icon (libayatana-appindicator).
+depends=('ufw' 'polkit' 'webkit2gtk-4.1' 'gtk3' 'libayatana-appindicator')
+# The CPU build needs no GPU library, and the app picks the Vulkan build only if libvulkan.so.1 is present, so the
+# loader is optional: without it everything still runs, on the CPU.
+optdepends=('vulkan-icd-loader: GPU acceleration for the local model (also install your GPU driver ICD)')
+# makepkg must not rewrite any binary. A stripped PyInstaller onefile can lose its appended
+# archive, and the shipped bytes must equal the reviewed freeze; scripts/verify-pkg.sh checks that after makepkg.
+options=('!strip' '!debug')
+source=()
+sha256sums=()
+_repo="$startdir/../.."
+_triple="x86_64-unknown-linux-gnu"
+
+package() {
+  install -Dm755 "$_repo/src-tauri/target/release/arrowmem-desktop" "$pkgdir/usr/bin/arrowmem-desktop"
+  install -Dm644 "$_repo/packaging/arch/arrowmem-desktop.desktop" "$pkgdir/usr/share/applications/arrowmem-desktop.desktop"
+  # The real ArrowMem mark (the frontend file, unchanged geometry, scripts/make-icons.py) on a light rounded tile, at the hicolor sizes and scalable.
+  for sz in 48 128 256; do
+    install -Dm644 "$_repo/packaging/icons/arrowmem-desktop-$sz.png" "$pkgdir/usr/share/icons/hicolor/${sz}x${sz}/apps/arrowmem-desktop.png"
+  done
+  install -Dm644 "$_repo/packaging/icons/arrowmem-desktop.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/arrowmem-desktop.svg"
+  install -Dm755 "$_repo/scripts/arrowbridge-fw" "$pkgdir/usr/lib/arrowmem/arrowbridge-fw"
+  install -Dm644 "$_repo/packaging/polkit/ca.arrowmem.arrowbridge.firewall.policy" "$pkgdir/usr/share/polkit-1/actions/ca.arrowmem.arrowbridge.firewall.policy"
+  install -Dm755 "$_repo/src-tauri/binaries/arrowbridge-companion-$_triple" "$pkgdir/usr/lib/arrowmem/arrowbridge-companion"
+  # Each llama-server build lives in its own directory with its own shared libraries (they find them beside
+  # themselves), so the two never share or overwrite a .so. The flat names are links to them.
+  for v in cpu vulkan; do
+    install -Dm755 "$_repo/src-tauri/binaries/llama-$v/llama-server" "$pkgdir/usr/lib/arrowmem/llama-$v/llama-server"
+    for lib in "$_repo"/src-tauri/binaries/llama-$v/*.so*; do
+      install -Dm755 "$lib" "$pkgdir/usr/lib/arrowmem/llama-$v/$(basename "$lib")"
+    done
+    ln -s "llama-$v/llama-server" "$pkgdir/usr/lib/arrowmem/llama-server-$v"
+  done
+}

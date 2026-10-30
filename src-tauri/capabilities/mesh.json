@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "mesh",
+  "description": "Arrowmesh window: core only, no shell, and only the loopback daemon call",
+  "windows": ["mesh"],
+  "permissions": [
+    "core:default",
+    "allow-mesh-call",
+    "allow-mesh-export"
+  ]
+}
