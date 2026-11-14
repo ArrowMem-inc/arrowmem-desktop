@@ -26,7 +26,7 @@ use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::TrayIconBuilder;
 use tauri::{Manager, WindowEvent};
 
-use supervisor::{free_port, locate_companion, locate_llama, LlamaLauncher, RealLauncher, Supervisor};
+use supervisor::{free_port, locate_arrowmesh, locate_companion, locate_llama, LlamaLauncher, MeshRun, RealLauncher, Supervisor};
 
 #[cfg(unix)]
 static SIGNALLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -570,6 +570,11 @@ pub fn run() {
     let variant_setup = llama_variant.clone();
     let sup_setup = sup.clone();
     let sup_exit = sup.clone();
+    // The arrowmesh daemon: started locked once the model key file exists, restarted when that key rotates, stopped on quit.
+    let mesh_sup: Arc<Mutex<Option<MeshRun>>> = Arc::new(Mutex::new(None));
+    let mesh_tick = mesh_sup.clone();
+    let mesh_exit = mesh_sup.clone();
+    let mesh_note: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
 
     let app = tauri::Builder::default()
         .plugin(mesh::dlg_init())
@@ -660,6 +665,9 @@ pub fn run() {
             let handle = app.handle().clone();
             let sup = sup_setup.clone();
             let llama_tick = llama_sup.clone();
+            let mesh_key_file = key_file.clone();
+            let mesh_note_tick = mesh_note.clone();
+            let handle_mesh = app.handle().clone();
             let t0 = Instant::now();
             let mut tray_tick: u32 = 0;
             std::thread::spawn(move || loop {
@@ -694,6 +702,12 @@ pub fn run() {
                     *note_tick.lock().unwrap() = format!("Model: {}", s.tick(t0.elapsed().as_millis() as u64).label());
                 }
                 let _ = &label;
+                if let (Some(kf), Some(home), Some(info)) = (mesh_key_file.as_ref(), std::env::var_os("HOME"), handle_mesh.try_state::<Info>()) {
+                    let dir = supervisor::arrowmesh_dir(std::env::var("ARROWMEM_ARROWMESH_DIR").ok().as_deref(), &home.to_string_lossy());
+                    let bin = locate_arrowmesh();
+                    let line = supervisor::mesh_step(&mut mesh_tick.lock().unwrap(), bin.as_deref(), &dir, info.llama_port, kf, t0.elapsed().as_millis() as u64);
+                    supervisor::note_change(&mut mesh_note_tick.lock().unwrap(), line);
+                }
                 // The tray status line is the paired state; unknown keeps the line as it was. Asked every tenth second, not every second: each loopback request leaves a
                 // TIME-WAIT socket on the companion port, and a restart of the companion cannot bind while many exist (it binds without SO_REUSEADDR).
                 tray_tick = tray_tick.wrapping_add(1);
@@ -729,6 +743,9 @@ pub fn run() {
             }
             if let Some(s) = llama_exit.lock().unwrap().as_mut() {
                 s.stop();
+            }
+            if let Some(r) = mesh_exit.lock().unwrap().as_mut() {
+                r.sup.stop();
             }
         }
     });

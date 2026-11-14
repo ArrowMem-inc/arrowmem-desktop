@@ -6,3 +6,4 @@ src-tauri/binaries/*
 !src-tauri/binaries/.gitkeep
 build/
 dist/
+target-sidecar/

@@ -321,6 +321,182 @@ pub fn locate_companion() -> Option<PathBuf> {
     locate_sidecar("ARROWMEM_COMPANION_BIN", "arrowbridge-companion")
 }
 
+// ---- arrowmesh (the one-app daemon) ----
+
+/// Default loopback ports of the daemon (arrowmesh config.rs): the chat/API listener and the mesh listener.
+pub const ARROWMESH_CHAT_PORT: u16 = 8088;
+pub const ARROWMESH_MESH_PORT: u16 = 8090;
+
+pub fn locate_arrowmesh() -> Option<PathBuf> {
+    locate_sidecar("ARROWMEM_ARROWMESH_BIN", "arrowmesh")
+}
+
+/// Where the daemon keeps its files. The same folder arrowmesh and `mesh.rs` default to, so the mesh window finds the token there.
+pub fn arrowmesh_dir(env_dir: Option<&str>, home: &str) -> PathBuf {
+    match env_dir.filter(|d| d.starts_with('/')) {
+        Some(d) => PathBuf::from(d),
+        None => PathBuf::from(home).join(".local/share/arrowmesh"),
+    }
+}
+
+/// True when something accepts a TCP connection on this loopback port.
+pub fn port_answers(port: u16) -> bool {
+    TcpStream::connect_timeout(&SocketAddr::from(([127, 0, 0, 1], port)), Duration::from_millis(500)).is_ok()
+}
+
+/// Status code of an authenticated `GET <path>`; the credential goes in a header, never in the URL.
+pub fn http_status_authed(port: u16, path: &str, credential: &str) -> Option<u16> {
+    let mut s = TcpStream::connect_timeout(&SocketAddr::from(([127, 0, 0, 1], port)), Duration::from_secs(2)).ok()?;
+    let _ = s.set_read_timeout(Some(Duration::from_secs(2)));
+    let _ = s.set_write_timeout(Some(Duration::from_secs(2)));
+    let head = format!("GET {path} HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\nAuthorization: {}\r\n\r\n", ["Bearer", credential].join(" "));
+    s.write_all(head.as_bytes()).ok()?;
+    let mut buf = [0u8; 12];
+    s.read_exact(&mut buf).ok()?;
+    if !buf.starts_with(b"HTTP/") {
+        return None;
+    }
+    std::str::from_utf8(&buf[9..12]).ok()?.parse().ok()
+}
+
+/// A 256 bit random hex token, written create_new at mode 600. An existing file is kept as is.
+fn ensure_token(path: &Path) -> Result<(), String> {
+    use std::os::unix::fs::OpenOptionsExt;
+    if path.exists() {
+        return Ok(());
+    }
+    let mut b = [0u8; 32];
+    std::fs::File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut b)).map_err(|e| format!("no random source: {e}"))?;
+    let hex: String = b.iter().map(|x| format!("{x:02x}")).collect();
+    let mut f = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(path).map_err(|e| format!("api token: {}", e.kind()))?;
+    f.write_all(format!("{hex}\n").as_bytes()).map_err(|e| e.to_string())
+}
+
+/// The daemon's config. No `model_path`: the tray owns the one model server (R15), the daemon attaches to it and must find its key file, or it refuses to start.
+/// A path that holds `#`, a quote or a line break cannot be written (the config grammar would cut it), so it is refused here.
+pub fn arrowmesh_config(dir: &Path, llama_port: u16, llama_key_file: &Path, chat_port: u16, mesh_port: u16) -> Result<String, String> {
+    for p in [dir, llama_key_file] {
+        let t = p.to_string_lossy();
+        if t.contains('#') || t.contains('\n') || t.contains('\r') || t.contains('"') {
+            return Err("a path holds a character the daemon config cannot carry".into());
+        }
+    }
+    Ok(format!(
+        "llama_addr = 127.0.0.1:{llama_port}\nchat_addr = 127.0.0.1:{chat_port}\nmesh_listen = 127.0.0.1:{mesh_port}\ngate_model = false\nvault_dir = {d}/vault\nkey_file = {d}/identity.key\ntoken_file = {d}/api-token\nllama_key_file = {k}\nllama_key_required = true\n",
+        d = dir.display(),
+        k = llama_key_file.display()
+    ))
+}
+
+/// Make the folder (700), the loopback token (600, kept if present) and the config (600, rewritten each start because the model port can move).
+/// Returns the config path. Refuses when the model key file is missing: the daemon would refuse too (llama_key_required), so say so before spawning.
+pub fn prepare_arrowmesh(dir: &Path, llama_port: u16, llama_key_file: &Path, chat_port: u16, mesh_port: u16) -> Result<PathBuf, String> {
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    if !llama_key_file.is_file() {
+        return Err("the model server key file is not there yet".into());
+    }
+    let text = arrowmesh_config(dir, llama_port, llama_key_file, chat_port, mesh_port)?;
+    std::fs::create_dir_all(dir).map_err(|e| format!("data folder: {}", e.kind()))?;
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
+    ensure_token(&dir.join("api-token"))?;
+    let tmp = dir.join(".arrowmem-app.conf.tmp");
+    let _ = std::fs::remove_file(&tmp);
+    let mut f = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&tmp).map_err(|e| format!("config: {}", e.kind()))?;
+    f.write_all(text.as_bytes()).and_then(|_| f.sync_all()).map_err(|e| e.to_string())?;
+    let conf = dir.join("arrowmem-app.conf");
+    std::fs::rename(&tmp, &conf).map_err(|e| e.to_string())?;
+    Ok(conf)
+}
+
+/// Third child: the arrowmesh daemon. Always started sealed (`run` reads no passphrase); the app unlocks it later over the loopback API.
+pub struct ArrowmeshLauncher {
+    pub binary: PathBuf,
+    pub config: PathBuf,
+    pub token_file: PathBuf,
+    pub chat_port: u16,
+    pub mesh_port: u16,
+}
+
+impl ArrowmeshLauncher {
+    pub fn args(&self) -> Vec<String> {
+        vec!["run".into(), "--config".into(), self.config.to_string_lossy().into_owned()]
+    }
+}
+
+impl Launcher for ArrowmeshLauncher {
+    type P = RealProc;
+    fn spawn(&mut self) -> std::io::Result<RealProc> {
+        // A port that already answers belongs to a process this app did not start. Never adopt it, never start beside it.
+        for port in [self.chat_port, self.mesh_port] {
+            if port_answers(port) {
+                eprintln!("arrowmem: port {port} already answers from a process this app did not start, arrowmesh not started");
+                return Err(std::io::Error::new(std::io::ErrorKind::AddrInUse, "port already answers"));
+            }
+        }
+        let mut cmd = Command::new(&self.binary);
+        #[cfg(unix)]
+        std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+        // No passphrase, token or key in argv or the environment: the config names files, nothing else.
+        cmd.args(self.args()).env_remove("ARROWMESH_PASSPHRASE").stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        cmd.spawn().map(RealProc)
+    }
+    /// Alive = `/v1/status` answers 200 (unlocked) or 423 (sealed) to our token. Anything else, a 401 included, is not our daemon.
+    fn healthy(&mut self) -> bool {
+        let Ok(token) = crate::mesh::read_token(&self.token_file) else { return false };
+        matches!(http_status_authed(self.chat_port, "/v1/status", &token), Some(200) | Some(423))
+    }
+}
+
+/// Keep the latest status line, and write one plain log line only when it changes (the log never repeats a line every two seconds).
+pub fn note_change(prev: &mut String, line: String) {
+    if *prev != line {
+        eprintln!("arrowmem: {line}");
+        *prev = line;
+    }
+}
+
+/// Identity of the model key file (inode and mtime): the tray's install rotates the key, and a daemon that read the old one would get 401 from the model server.
+pub fn key_stamp(p: &Path) -> Option<(u64, i64, i64)> {
+    use std::os::unix::fs::MetadataExt;
+    let m = std::fs::symlink_metadata(p).ok()?;
+    m.is_file().then(|| (m.ino(), m.mtime(), m.mtime_nsec()))
+}
+
+/// The daemon's supervisor plus the key it was started against. Restarted when the key file changes.
+pub struct MeshRun {
+    pub sup: Supervisor<ArrowmeshLauncher>,
+    pub stamp: Option<(u64, i64, i64)>,
+}
+
+/// One pass of the tray loop. Starts the daemon once the model key file exists (the model side may still be coming up), restarts it when the key is
+/// rotated, and otherwise just ticks it. Returns a plain status label.
+pub fn mesh_step(slot: &mut Option<MeshRun>, binary: Option<&Path>, dir: &Path, llama_port: u16, key_file: &Path, now: u64) -> String {
+    let stamp = key_stamp(key_file);
+    if let Some(r) = slot.as_mut() {
+        if r.stamp != stamp {
+            r.sup.stop();
+            *slot = None;
+        }
+    }
+    if slot.is_none() {
+        let Some(binary) = binary else { return "Arrowmesh not found".into() };
+        if stamp.is_none() {
+            return "Arrowmesh waiting for the model key".into();
+        }
+        match prepare_arrowmesh(dir, llama_port, key_file, ARROWMESH_CHAT_PORT, ARROWMESH_MESH_PORT) {
+            Ok(config) => {
+                let l = ArrowmeshLauncher { binary: binary.to_path_buf(), config, token_file: dir.join("api-token"), chat_port: ARROWMESH_CHAT_PORT, mesh_port: ARROWMESH_MESH_PORT };
+                *slot = Some(MeshRun { sup: Supervisor::new(l), stamp });
+            }
+            Err(e) => return format!("Arrowmesh not started: {e}"),
+        }
+    }
+    match slot.as_mut() {
+        Some(r) => format!("Arrowmesh {}", r.sup.tick(now).label()),
+        None => "Arrowmesh stopped".into(),
+    }
+}
+
 /// Which llama-server build runs: the packaged variants are chosen by device presence, anything else is unknown.
 pub fn locate_llama() -> Option<(PathBuf, Option<&'static str>)> {
     let exe_dir = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf()));
@@ -732,5 +908,251 @@ mod tests {
         assert_eq!(resolve_sidecar(Some("/e/x".into()), "llama-server", Some(&exe), &sys), Some(PathBuf::from("/e/x")));
         // a different name is not matched by prefix of another
         assert_eq!(resolve_sidecar(None, "arrowbridge-companion", Some(&exe), &sys), None);
+    }
+
+    // ---- arrowmesh launcher ----
+
+    fn mtmp(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("am-mesh-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn key_in(d: &Path) -> PathBuf {
+        crate::apikey::rotate(d).unwrap();
+        d.join(crate::apikey::KEY_FILE)
+    }
+
+    /// A stand-in daemon: honours `run --config P`, binds chat_addr from the config, answers /v1/status 423 to its token file's bearer and 401 to anyone else.
+    const FAKE_MESH: &str = r#"#!/usr/bin/env python3
+import sys, http.server
+conf = sys.argv[sys.argv.index("--config") + 1]
+kv = {}
+for line in open(conf):
+    if "=" in line:
+        k, v = line.split("=", 1)
+        kv[k.strip()] = v.strip()
+port = int(kv["chat_addr"].rsplit(":", 1)[1])
+tok = open(kv["token_file"]).read().strip()
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        ok = self.headers.get("Authorization") == "Bearer " + tok
+        self.send_response(423 if ok else 401)
+        self.end_headers()
+    def log_message(self, *a): pass
+http.server.ThreadingHTTPServer(("127.0.0.1", port), H).serve_forever()
+"#;
+
+    fn fake_mesh(d: &Path) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let b = d.join("fake-arrowmesh");
+        std::fs::write(&b, FAKE_MESH).unwrap();
+        std::fs::set_permissions(&b, std::fs::Permissions::from_mode(0o755)).unwrap();
+        b
+    }
+
+    /// One canned HTTP answer on a free port, for the health mapping.
+    fn canned(status: &'static str) -> u16 {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = l.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for c in l.incoming().flatten() {
+                let mut c = c;
+                let mut b = [0u8; 512];
+                let _ = c.read(&mut b);
+                let _ = c.write_all(format!("HTTP/1.0 {status}\r\n\r\n").as_bytes());
+            }
+        });
+        port
+    }
+
+    #[test]
+    fn arrowmesh_args_are_run_and_a_config_path_and_nothing_else() {
+        let l = ArrowmeshLauncher { binary: "x".into(), config: PathBuf::from("/d/arrowmem-app.conf"), token_file: "/d/api-token".into(), chat_port: 1, mesh_port: 2 };
+        assert_eq!(l.args(), vec!["run", "--config", "/d/arrowmem-app.conf"]);
+    }
+
+    #[test]
+    fn arrowmesh_config_attaches_to_the_keyed_model_and_never_launches_one() {
+        let c = arrowmesh_config(Path::new("/d"), 8123, Path::new("/s/llama-api-key"), 8088, 8090).unwrap();
+        assert!(c.lines().any(|l| l == "llama_key_file = /s/llama-api-key"));
+        assert!(c.lines().any(|l| l == "llama_key_required = true"), "R15: the daemon must refuse an unkeyed attach");
+        assert!(c.lines().any(|l| l == "llama_addr = 127.0.0.1:8123"));
+        assert!(c.lines().any(|l| l == "chat_addr = 127.0.0.1:8088") && c.lines().any(|l| l == "mesh_listen = 127.0.0.1:8090"));
+        assert!(!c.contains("model_path") && !c.contains("llama_bin"), "R15: the tray owns the model, the daemon starts none");
+        assert!(!c.contains("passphrase"));
+        for bad in ["/d#x", "/d\"x", "/d\nx"] {
+            assert!(arrowmesh_config(Path::new(bad), 1, Path::new("/k"), 1, 2).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn arrowmesh_files_are_private_and_the_token_is_kept() {
+        use std::os::unix::fs::MetadataExt;
+        let d = mtmp("files");
+        let key = key_in(&d.join("state"));
+        let data = d.join("data");
+        let conf = prepare_arrowmesh(&data, 8123, &key, 8088, 8090).unwrap();
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().mode() & 0o777;
+        assert_eq!((mode(&data), mode(&conf), mode(&data.join("api-token"))), (0o700, 0o600, 0o600));
+        let t1 = std::fs::read_to_string(data.join("api-token")).unwrap();
+        assert_eq!(t1.trim().len(), 64);
+        prepare_arrowmesh(&data, 9999, &key, 8088, 8090).unwrap();
+        assert_eq!(std::fs::read_to_string(data.join("api-token")).unwrap(), t1, "token kept");
+        assert!(std::fs::read_to_string(&conf).unwrap().contains("127.0.0.1:9999"), "config rewritten with the new model port");
+        assert!(prepare_arrowmesh(&data, 1, &d.join("no-such-key"), 8088, 8090).is_err(), "no key file, no start");
+    }
+
+    #[test]
+    fn an_occupied_port_is_refused_and_the_binary_never_runs() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = mtmp("occupied");
+        let marker = d.join("ran");
+        let bin = d.join("bin");
+        std::fs::write(&bin, format!("#!/bin/sh\ntouch {}\n", marker.display())).unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        for occupy_mesh in [false, true] {
+            let held = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let held_port = held.local_addr().unwrap().port();
+            let free = free_port().unwrap();
+            let (chat, mesh) = if occupy_mesh { (free, held_port) } else { (held_port, free) };
+            let mut l = ArrowmeshLauncher { binary: bin.clone(), config: d.join("c"), token_file: d.join("t"), chat_port: chat, mesh_port: mesh };
+            let e = l.spawn().err().expect("must refuse");
+            assert_eq!(e.kind(), std::io::ErrorKind::AddrInUse);
+            std::thread::sleep(Duration::from_millis(300));
+            assert!(!marker.exists(), "the binary must not run beside a stranger");
+            // And through the supervisor: refused attempts back off, never adopt (no process, never Running).
+            let mut s = Supervisor::new(l);
+            assert!(matches!(s.tick(0), Status::Restarting { .. }));
+            assert!(matches!(s.tick(10_000_000), Status::Restarting { .. }));
+            assert!(s.proc.is_none());
+        }
+    }
+
+    #[test]
+    fn health_counts_sealed_423_and_open_200_and_nothing_else() {
+        let d = mtmp("health");
+        std::fs::write(d.join("t"), "ab".repeat(32)).unwrap();
+        std::fs::set_permissions(d.join("t"), std::os::unix::fs::PermissionsExt::from_mode(0o600)).unwrap();
+        for (status, want) in [("200 OK", true), ("423 Locked", true), ("401 Unauthorized", false), ("403 Forbidden", false), ("500 Oops", false), ("503 Unavailable", false), ("404 Not Found", false)] {
+            let mut l = ArrowmeshLauncher { binary: "x".into(), config: d.join("c"), token_file: d.join("t"), chat_port: canned(status), mesh_port: 1 };
+            assert_eq!(l.healthy(), want, "{status}");
+        }
+        let mut dead = ArrowmeshLauncher { binary: "x".into(), config: d.join("c"), token_file: d.join("t"), chat_port: free_port().unwrap(), mesh_port: 1 };
+        assert!(!dead.healthy(), "transport failure is unhealthy");
+        let mut notoken = ArrowmeshLauncher { binary: "x".into(), config: d.join("c"), token_file: d.join("none"), chat_port: canned("200 OK"), mesh_port: 1 };
+        assert!(!notoken.healthy(), "no readable token, no health claim");
+    }
+
+    #[test]
+    fn arrowmesh_lifecycle_start_sealed_crash_restart_with_backoff_stop() {
+        let d = mtmp("life");
+        let key = key_in(&d.join("state"));
+        let (chat, mesh) = (free_port().unwrap(), free_port().unwrap());
+        let data = d.join("data");
+        let config = prepare_arrowmesh(&data, 1, &key, chat, mesh).unwrap();
+        // The fake reads the chat port from the config, so point the config at our free port.
+        let text = std::fs::read_to_string(&config).unwrap().replace("127.0.0.1:8088", &format!("127.0.0.1:{chat}")).replace("127.0.0.1:8090", &format!("127.0.0.1:{mesh}"));
+        std::fs::write(&config, text).unwrap();
+        let l = ArrowmeshLauncher { binary: fake_mesh(&d), config, token_file: data.join("api-token"), chat_port: chat, mesh_port: mesh };
+        let mut s = Supervisor::new(l);
+        let mut now = 0u64;
+        let mut until = |s: &mut Supervisor<ArrowmeshLauncher>, now: &mut u64, want: &dyn Fn(&Status) -> bool| {
+            for _ in 0..100 {
+                if want(&s.tick(*now)) {
+                    return true;
+                }
+                *now += 300;
+                std::thread::sleep(Duration::from_millis(300));
+            }
+            false
+        };
+        assert!(until(&mut s, &mut now, &|st| *st == Status::Running), "never Running (sealed 423 counts)");
+        assert_eq!(http_status(chat, "/v1/status"), Some(401), "no token, no answer");
+        let pid = s.proc.as_ref().unwrap().0.id();
+        unsafe { libc::kill(-(pid as i32), libc::SIGKILL) };
+        assert!(until(&mut s, &mut now, &|st| *st == Status::Restarting { attempt: 1, delay_ms: BACKOFF_BASE_MS }), "crash not seen with the first backoff");
+        // Time stands still at the crash instant until the delay passes: no respawn inside the window.
+        let at = now;
+        assert!(matches!(s.tick(at + BACKOFF_BASE_MS - 1), Status::Restarting { .. }) && s.proc.is_none());
+        assert!(until(&mut s, &mut now, &|st| *st == Status::Running), "no restart");
+        assert_ne!(s.proc.as_ref().unwrap().0.id(), pid);
+        s.stop();
+        assert_eq!(*s.status(), Status::Stopped);
+        assert_eq!(s.tick(now + 1_000_000), Status::Stopped, "stop never restarts");
+        assert_eq!(http_status(chat, "/v1/status"), None, "port still answering after stop");
+    }
+
+    #[test]
+    fn mesh_step_waits_for_the_key_starts_locked_and_restarts_when_the_key_rotates() {
+        let d = mtmp("step");
+        let state = d.join("state");
+        let key = state.join(crate::apikey::KEY_FILE);
+        let data = d.join("data");
+        let bin = fake_mesh(&d);
+        let mut slot: Option<MeshRun> = None;
+        assert_eq!(mesh_step(&mut slot, None, &data, 1, &key, 0), "Arrowmesh not found");
+        assert_eq!(mesh_step(&mut slot, Some(&bin), &data, 1, &key, 0), "Arrowmesh waiting for the model key");
+        assert!(slot.is_none() && !data.exists(), "nothing written before the key exists");
+        crate::apikey::rotate(&state).unwrap();
+        // The fake binds the config's chat port, which is the production 8088 here; skip the spawn if something already holds it.
+        if port_answers(ARROWMESH_CHAT_PORT) || port_answers(ARROWMESH_MESH_PORT) {
+            eprintln!("skipping the spawn half: 8088 or 8090 is held on this machine");
+            return;
+        }
+        let first = mesh_step(&mut slot, Some(&bin), &data, 1, &key, 0);
+        assert!(first.starts_with("Arrowmesh "), "{first}");
+        let stamp1 = slot.as_ref().unwrap().stamp;
+        let pid1 = slot.as_ref().unwrap().sup.proc.as_ref().map(|p| p.0.id());
+        assert!(pid1.is_some());
+        std::thread::sleep(Duration::from_millis(1100));
+        crate::apikey::rotate(&state).unwrap();
+        mesh_step(&mut slot, Some(&bin), &data, 1, &key, 10);
+        assert_ne!(slot.as_ref().unwrap().stamp, stamp1, "rotated key seen");
+        assert_ne!(slot.as_ref().unwrap().sup.proc.as_ref().map(|p| p.0.id()), pid1, "daemon restarted against the new key");
+        slot.as_mut().unwrap().sup.stop();
+    }
+
+    /// Live R15 wiring: the real arrowmesh binary, the real keyed model server already running.
+    /// ARROWMEM_ARROWMESH_BIN=<binary> LIVE_LLAMA_PORT=<port> LIVE_KEY_FILE=<0600 key file> cargo test --offline -- --ignored live_arrowmesh
+    #[test]
+    #[ignore]
+    fn live_arrowmesh_boots_sealed_and_reports_the_model_keyed() {
+        let binary = PathBuf::from(std::env::var("ARROWMEM_ARROWMESH_BIN").expect("binary"));
+        let port: u16 = std::env::var("LIVE_LLAMA_PORT").expect("port").parse().unwrap();
+        let key = PathBuf::from(std::env::var("LIVE_KEY_FILE").expect("key file"));
+        let d = mtmp("live");
+        let (chat, mesh) = (free_port().unwrap(), free_port().unwrap());
+        let data = d.join("data");
+        let config = prepare_arrowmesh(&data, port, &key, chat, mesh).unwrap();
+        let l = ArrowmeshLauncher { binary, config, token_file: data.join("api-token"), chat_port: chat, mesh_port: mesh };
+        let mut s = Supervisor::new(l);
+        let t0 = std::time::Instant::now();
+        let mut up = false;
+        while t0.elapsed() < Duration::from_secs(30) {
+            if s.tick(t0.elapsed().as_millis() as u64) == Status::Running {
+                up = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(300));
+        }
+        assert!(up, "daemon never Running (sealed counts)");
+        let t = crate::mesh::Target { addr: SocketAddr::from(([127, 0, 0, 1], chat)), token_file: data.join("api-token") };
+        let mut r = crate::mesh::call(&t, "GET", "/v1/status", None).unwrap();
+        for _ in 0..60 {
+            if r.body["model_up"] == true {
+                break;
+            }
+            std::thread::sleep(Duration::from_secs(2));
+            r = crate::mesh::call(&t, "GET", "/v1/status", None).unwrap();
+        }
+        eprintln!("LIVE status {} {}", r.status, r.body);
+        assert_eq!(r.body["model_keyed"], true, "R15: model_keyed must read true: {}", r.body);
+        assert_eq!(r.body["model_up"], true, "attached model must answer: {}", r.body);
+        assert_eq!(r.body["vault_unlocked"], false, "boots sealed");
+        assert_eq!(http_status(chat, "/v1/status"), Some(401), "anonymous gets 401");
+        s.stop();
+        assert_eq!(http_status(chat, "/v1/status"), None);
     }
 }

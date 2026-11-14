@@ -126,8 +126,8 @@ class Files(unittest.TestCase):
         # spawned by path from supervisor.rs, never through the shell plugin. A flat externalBin entry would make
         # the build look for binaries/llama-server-<triple>, which fetch-sidecars never writes.
         conf = json.load(open(os.path.join(R, "src-tauri", "tauri.conf.json")))
-        self.assertEqual(conf["bundle"]["externalBin"], ["binaries/arrowbridge-companion"])
-        caps = open(os.path.join(R, "src-tauri", "capabilities", "default.json")).read()
+        self.assertEqual(conf["bundle"]["externalBin"], ["binaries/arrowbridge-companion", "binaries/arrowmesh"])
+        caps =open(os.path.join(R, "src-tauri", "capabilities", "default.json")).read()
         self.assertNotIn("llama-server", caps)
 
     def test_makepkg_never_rewrites_a_binary_and_the_gate_compares_bytes(self):

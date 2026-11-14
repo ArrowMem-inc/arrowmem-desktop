@@ -179,7 +179,7 @@ for _ in range(4000):
     d = mvf_distress if dm == "with" else None
     r = mvf_urgent.urgent_reply([a, b], lang, d)
     urgent_cases.append({"texts": [a, b], "lang": lang, "distress": dm == "with", "out": None if r is None else [r[0], r[1]]})
-# Differential cases (generator in the companion source repo, commit 2adf45ff): seeds mutated with unicode spaces, combining marks, joiners, Kelvin and long s,
+# Differential cases: seeds mutated with unicode spaces, combining marks, joiners, Kelvin and long s,
 # fullwidth letters, dotted and dotless I, curly apostrophes, underscore tails. Same mutator, own seed, answers from the originals.
 CRY_SEEDS = ["my friend is bleeding badly", "I think I am having a heart attack", "he is unconscious and not breathing", "I want to kill myself", "I don't want to be here anymore",
              "she took too many pills", "bleach got in my eyes", "chest pain and my left arm is numb", "je veux mourir", "il saigne beaucoup", "my dog ate my pills and I want to die",
