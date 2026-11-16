@@ -31,8 +31,11 @@ class T(unittest.TestCase):
         self.assertTrue(any("source_host" in e for e in self.mut(lambda m: m["models"][0].update(source_host="evil.example"))))
     def test_larger_tier_exists(self):
         self.assertGreater(max(e["tier"] for e in M["models"]), [e for e in M["models"] if e["default"]][0]["tier"])
-    def test_only_e4b_and_e2b_approved(self):
-        self.assertEqual(sorted(e["id"] for e in M["models"] if e["approved"]), ["gemma-4-E2B-it-q4_0", "gemma-4-E4B-it-q4_0"])
+    def test_the_approved_list_is_the_ruled_six(self):
+        # The two small defaults plus the four larger tiers ruled in R-514 ADD 192 and ADD 193; the two gemma candidates stay unapproved.
+        self.assertEqual(sorted(e["id"] for e in M["models"] if e["approved"]), [
+            "gemma-4-E2B-it-q4_0", "gemma-4-E4B-it-q4_0", "gpt-oss-120b-mxfp4",
+            "qwen3-14b-q4_k_m", "qwen3-235b-a22b-q4_k_m", "qwen3-32b-q4_k_m"])
     def test_candidates_unapproved_and_google_sourced(self):
         c = [e for e in M["models"] if e["id"] in ("gemma-4-12B-it-q4_0", "gemma-4-26B-A4B-it-q4_0")]
         self.assertEqual(len(c), 2)

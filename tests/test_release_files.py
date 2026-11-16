@@ -29,7 +29,11 @@ class Files(unittest.TestCase):
         self.assertEqual(got[pol], ("644", "ca.arrowmem.arrowbridge.firewall.policy"))
         self.assertEqual(got["/usr/bin/arrowmem-desktop"][0], "755")
         self.assertEqual(got["/usr/share/applications/arrowmem-desktop.desktop"][0], "644")
-        self.assertEqual(got["/usr/share/icons/hicolor/128x128/apps/arrowmem-desktop.png"][0], "644")
+        # The icons install in a loop over the sizes, so the regex above sees the size as the variable $sz.
+        self.assertIn("for sz in 48 128 256; do", t)
+        self.assertEqual(got["/usr/share/icons/hicolor/${sz}x${sz}/apps/arrowmem-desktop.png"][0], "644")
+        for sz in (48, 128, 256):
+            self.assertTrue(os.path.exists(os.path.join(R, "packaging", "icons", "arrowmem-desktop-%d.png" % sz)), sz)
         self.assertRegex(t, r"(?m)^source=\(\)")
         self.assertNotRegex(t, r"https?://[^\s]*(\.tar|\.zip|\.git|releases)")
 
