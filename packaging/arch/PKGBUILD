@@ -7,8 +7,8 @@
 # Local sources only: everything is installed from this checkout, nothing is fetched. Build the app first with
 # `cargo build --release` in src-tauri, then run makepkg in this directory.
 pkgname=arrowmem-desktop
-pkgver=0.1.0
-pkgrel=7
+pkgver=0.1.1
+pkgrel=1
 pkgdesc="ArrowMem home machine app"
 arch=('x86_64')
 url="https://arrowmem.ca"
