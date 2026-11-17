@@ -68,6 +68,8 @@ pub enum Step {
     Deferred,
     /// The rebind rate cap was reached: nothing written, nothing restarted, the bridge keeps its binding.
     Capped,
+    /// The network is the one the unit is bound to, but there was a gap with no address in between: its rule was parked, so the firewall step ran again.
+    Resumed(FwStep),
     Followed { to: Lan, forced: bool, firewall: FwStep },
     Failed(String),
 }
@@ -88,13 +90,38 @@ pub fn defer_remove(_: &str) -> Result<FwOutcome, String> {
 
 /// The window's button, after the current network was allowed: withdraw every network left behind (never `current`, the one that is up).
 /// A withdrawal that is not answered stays on the list.
-pub fn withdraw_stale(stale: &mut Vec<String>, current: Option<&str>, remove: &dyn Fn(&str) -> Result<FwOutcome, String>) {
+/// True when nothing is left on the list.
+pub fn withdraw_stale(stale: &mut Vec<String>, current: Option<&str>, remove: &dyn Fn(&str) -> Result<FwOutcome, String>) -> bool {
     stale.retain(|c| Some(c.as_str()) != current);
     for c in stale.clone() {
         if ok_outcome(&remove(&c)) {
             stale.retain(|s| *s != c);
         }
     }
+    stale.is_empty()
+}
+
+/// The window's firewall button. With an address: allow the network that is up, then withdraw the stale ones. With no address (review C2): there is
+/// nothing to allow, but the networks left behind are still withdrawn, so a rule is never left standing for a later network with the same numbering.
+/// With no address and nothing stale there is nothing to do, which is the old "no private network address" error.
+pub fn press_button(
+    stale: &mut Vec<String>,
+    lan: Option<Lan>,
+    allow: &dyn Fn(Lan) -> Result<FwOutcome, String>,
+    remove: &dyn Fn(&str) -> Result<FwOutcome, String>,
+) -> Result<FwOutcome, String> {
+    let Some(l) = lan else {
+        if stale.is_empty() {
+            return Err("no private network address".into());
+        }
+        return if withdraw_stale(stale, None, remove) { Ok(FwOutcome::Done) } else { Err("a stale allow was not withdrawn".into()) };
+    };
+    let r = allow(l)?;
+    if matches!(r, FwOutcome::Done | FwOutcome::NoFirewall) {
+        let current = firewall::cidr_from(l.0, l.1).ok();
+        withdraw_stale(stale, current.as_deref(), remove);
+    }
+    Ok(r)
 }
 
 #[derive(Default)]
@@ -107,6 +134,8 @@ pub struct Follower {
     pub stale: Vec<String>,
     /// When each recent rebind was attempted (poll seconds), for the rate cap.
     rebinds: Vec<u64>,
+    /// A pick of None happened while the bridge was bound: the next address is followed by a firewall step even on the same network.
+    gap: bool,
 }
 
 fn ok_outcome(r: &Result<FwOutcome, String>) -> bool {
@@ -117,12 +146,23 @@ impl Follower {
     pub fn tick(&mut self, ifaces: &[Iface], default_if: Option<&str>, ctx: &Ctx, h: &Hooks, now: u64) -> Step {
         let Some(to) = linuxrun::pick_lan(ifaces, default_if).map(|i| (i.ip, i.mask)) else {
             self.deferred_since = None;
+            // Review C2: nothing is called, but the network that went away is parked on the stale list at once, so the window's button can withdraw
+            // its allow while there is no address, and whatever comes next is asked for explicitly.
+            if let Some(c) = self.bound.and_then(|b| firewall::cidr_from(b.0, b.1).ok()) {
+                if !self.stale.contains(&c) {
+                    self.stale.push(c);
+                }
+                self.gap = true;
+            }
             return Step::NoAddress;
         };
+        // Cleared only once the firewall step has run, so a deferred, capped or failed tick keeps it for the tick that follows.
+        let after_gap = self.gap;
         if self.bound == Some(to) {
             self.deferred_since = None;
             self.failed = None;
-            return Step::Unchanged;
+            self.gap = false;
+            return if after_gap { Step::Resumed(self.firewall(self.bound, to, true, h)) } else { Step::Unchanged };
         }
         if let Some((t, until)) = self.failed {
             if t == to && now < until {
@@ -154,7 +194,8 @@ impl Follower {
         self.deferred_since = None;
         self.failed = None;
         (h.bound)(to);
-        let firewall = self.firewall(from, to, h);
+        self.gap = false;
+        let firewall = self.firewall(from, to, after_gap, h);
         Step::Followed { to, forced, firewall }
     }
 
@@ -189,7 +230,7 @@ impl Follower {
 
     /// After the restart: allow the new network, then withdraw the old one. Never a rule for a network that is not up, never a
     /// withdrawal of the network that is. A refused prompt keeps the old network on the stale list for the next successful move.
-    fn firewall(&mut self, from: Option<Lan>, to: Lan, h: &Hooks) -> FwStep {
+    fn firewall(&mut self, from: Option<Lan>, to: Lan, after_gap: bool, h: &Hooks) -> FwStep {
         let new = match firewall::cidr_from(to.0, to.1) {
             Ok(c) => c,
             Err(e) => return FwStep::Waiting(e),
@@ -201,7 +242,8 @@ impl Follower {
             }
         }
         self.stale.retain(|c| *c != new); // back on a network we had left: its rule is wanted again
-        if old.is_none() && self.stale.is_empty() && from.is_some() {
+        // After a gap with no address the rule of the network we were on was parked (and may have been withdrawn), so same network or not, ask again.
+        if old.is_none() && self.stale.is_empty() && from.is_some() && !after_gap {
             return FwStep::NotNeeded;
         }
         let a = (h.allow)(to);
@@ -346,13 +388,63 @@ mod tests {
         assert_eq!(r.tick(&mut f, &[], None, 3), Step::NoAddress);
         assert!(calls(&r.d).is_empty() && r.fw().is_empty() && !r.dir.join(BRIDGE_UNIT).exists());
         assert_eq!(f.bound, Some(lan("10.42.0.1")), "the bound address is remembered across the gap");
-        // the same hotspot returns: the unit is still bound to it
-        assert_eq!(r.tick(&mut f, &hotspot_net(), Some("wlan0"), 6), Step::Unchanged);
+        // the same hotspot returns: the unit is still bound to it, nothing restarts, but its rule was parked (the button may have withdrawn it): asked again
+        assert_eq!(r.tick(&mut f, &hotspot_net(), Some("wlan0"), 6), Step::Resumed(FwStep::Done));
         assert!(calls(&r.d).is_empty());
+        assert_eq!(r.fw(), vec!["allow 10.42.0.0/24"]);
         // a different network returns: the old one is withdrawn then
         let s = r.tick(&mut f, &lan_net(), Some("enp3s0"), 9);
         assert!(matches!(s, Step::Followed { firewall: FwStep::Done, .. }), "{s:?}");
-        assert_eq!(r.fw(), vec!["allow 192.168.1.0/24", "remove 10.42.0.0/24"]);
+        assert_eq!(r.fw(), vec!["allow 10.42.0.0/24", "allow 192.168.1.0/24", "remove 10.42.0.0/24"]);
+    }
+
+    /// Review C2: a hotspot that goes away leaves its allow in ufw. The network is parked on the stale list at once (so the window's button can withdraw it
+    /// with no address), and the next network, even one with the same numbering, is asked for explicitly, never silently covered by the old rule.
+    #[test]
+    fn hotspot_to_none_parks_the_old_network_and_a_later_same_numbered_network_is_not_silently_open() {
+        // the button was pressed during the gap and withdrew the parked rule
+        let r = Rig::new("c2a");
+        let mut f = at("10.42.0.1");
+        assert_eq!(r.tick(&mut f, &noise(), None, 0), Step::NoAddress);
+        assert_eq!(f.stale, vec!["10.42.0.0/24".to_string()], "the left network is not on the stale list");
+        withdraw_stale(&mut f.stale, None, &|_| Ok(FwOutcome::Done));
+        assert!(f.stale.is_empty());
+        let s = r.tick(&mut f, &with(vec![ifc("wlan0", "10.42.0.77")]), Some("wlan0"), 6);
+        assert!(matches!(s, Step::Followed { firewall: FwStep::Done, .. }), "silently open: {s:?}");
+        assert_eq!(r.fw(), vec!["allow 10.42.0.0/24"]);
+        // the button was not pressed: the same numbered network is asked for too, and its own rule is never withdrawn
+        let r = Rig::new("c2b");
+        let mut f = at("10.42.0.1");
+        r.tick(&mut f, &noise(), None, 0);
+        let s = r.tick(&mut f, &with(vec![ifc("wlan0", "10.42.0.77")]), Some("wlan0"), 6);
+        assert!(matches!(s, Step::Followed { firewall: FwStep::Done, .. }), "{s:?}");
+        assert_eq!(r.fw(), vec!["allow 10.42.0.0/24"]);
+        assert!(f.stale.is_empty());
+    }
+
+    #[test]
+    fn the_button_with_no_address_withdraws_the_stale_allows_and_does_not_error_first() {
+        let r = Rig::new("c2btn");
+        let mut f = at("10.42.0.1");
+        r.tick(&mut f, &noise(), None, 0);
+        let asked = RefCell::new(vec![]);
+        let allow = |l: Lan| { asked.borrow_mut().push(format!("allow {}", l.0)); Ok(FwOutcome::Done) };
+        let remove = |c: &str| { asked.borrow_mut().push(format!("remove {c}")); Ok(FwOutcome::Done) };
+        assert_eq!(press_button(&mut f.stale, None, &allow, &remove), Ok(FwOutcome::Done));
+        assert_eq!(*asked.borrow(), vec!["remove 10.42.0.0/24"], "no allow without an address, and the old network goes");
+        assert!(f.stale.is_empty());
+        // nothing stale and no address: still the old error, nothing asked
+        assert!(press_button(&mut f.stale, None, &allow, &remove).is_err());
+        assert_eq!(asked.borrow().len(), 1);
+        // a cancelled withdrawal stays and reads as not done
+        let mut st = vec!["10.42.0.0/24".to_string()];
+        assert!(press_button(&mut st, None, &allow, &|_| Ok(FwOutcome::Failed(126))).is_err());
+        assert_eq!(st, vec!["10.42.0.0/24"]);
+        // with an address: allow first, then the stale ones
+        let mut st = vec!["192.168.1.0/24".to_string()];
+        asked.borrow_mut().clear();
+        assert_eq!(press_button(&mut st, Some(lan("10.42.0.1")), &allow, &remove), Ok(FwOutcome::Done));
+        assert_eq!(*asked.borrow(), vec!["allow 10.42.0.1", "remove 192.168.1.0/24"]);
     }
 
     #[test]

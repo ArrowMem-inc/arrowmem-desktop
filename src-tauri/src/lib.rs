@@ -480,15 +480,17 @@ fn retry_firewall(info: tauri::State<Info>) -> Result<String, String> {
     let lan = *info.lan.lock().unwrap();
     let dir = info.data_dir.lock().unwrap().clone().ok_or("not ready")?;
     let (pkexec, helper) = (std::path::Path::new("/usr/bin/pkexec"), std::path::Path::new(firewall::HELPER_PATH));
-    let r = pairing::retry_firewall(&dir, lan, pkexec, helper)?;
-    // The network that is up is allowed (or there is no firewall to configure): now the networks the bridge left are withdrawn (round 3a, item C).
+    // The network that is up is allowed (or there is no firewall to configure): then the networks the bridge left are withdrawn (round 3a, item C),
+    // and with no address at all they are withdrawn alone (review C2).
     #[cfg(target_os = "linux")]
-    if matches!(r, firewall::FwOutcome::Done | firewall::FwOutcome::NoFirewall) {
-        let current = lan.and_then(|(ip, mask)| firewall::cidr_from(ip, mask).ok());
+    let r = {
         let mut stale = info.stale.lock().unwrap().clone();
-        follow::withdraw_stale(&mut stale, current.as_deref(), &|c| firewall::remove_for(pkexec, helper, c));
+        let r = follow::press_button(&mut stale, lan, &|l| pairing::retry_firewall(&dir, Some(l), pkexec, helper), &|c| firewall::remove_for(pkexec, helper, c));
         *info.stale.lock().unwrap() = stale;
-    }
+        r?
+    };
+    #[cfg(not(target_os = "linux"))]
+    let r = pairing::retry_firewall(&dir, lan, pkexec, helper)?;
     Ok(match r {
         firewall::FwOutcome::Done => "done".into(),
         firewall::FwOutcome::NoFirewall => "no_firewall".into(),
