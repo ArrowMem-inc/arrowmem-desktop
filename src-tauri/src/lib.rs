@@ -599,13 +599,10 @@ pub fn run() {
             let quit = MenuItemBuilder::with_id("quit", firstrun::status_line("tray_quit", fr)).build(app)?;
             let status_win = MenuItemBuilder::with_id("status_win", firstrun::status_line("tray_status_window", fr)).build(app)?;
             let pair_item = MenuItemBuilder::with_id("pair", firstrun::status_line("tray_pair", fr)).build(app)?;
-            // UNCLEARED placeholder label, verbatim from the approved render (DES_ARROWMESH_RENDER_2026-10-29).
-            let mesh_item = MenuItemBuilder::with_id("mesh", "[CA] app name").build(app)?;
-            let menu = MenuBuilder::new(app).items(&[&status_item, &open, &pair_item, &mesh_item, &status_win, &uninstall_item, &quit]).build()?;
+            let menu = MenuBuilder::new(app).items(&[&status_item, &open, &pair_item, &status_win, &uninstall_item, &quit]).build()?;
             let mut tray = TrayIconBuilder::new().menu(&menu).tooltip("ArrowMem").on_menu_event(
                 |app, ev| match ev.id().as_ref() {
                     "open" | "pair" => open_window(app, "main", "home.html"),
-                    "mesh" => open_window(app, "mesh", "mesh-chat.html"),
                     "status_win" => open_window(app, "status", "status.html"),
                     "uninstall" => open_window(app, "uninstall", "uninstall.html"),
                     "quit" => app.exit(0),
