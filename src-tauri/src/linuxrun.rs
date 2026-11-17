@@ -356,8 +356,9 @@ mod tests {
     fn fake(d: &Path) -> PathBuf {
         let p = d.join("fakectl");
         let dd = d.display();
-        std::fs::write(&p, format!("#!/bin/sh\necho \"$@\" >> {dd}/calls.log\nfor u; do :; done\ncase \"$2\" in\n enable) touch {dd}/active.$u;;\n disable) rm -f {dd}/active.$u;;\n is-active) [ -f {dd}/active.$u ] || exit 1;;\nesac\nexit 0\n")).unwrap();
+        std::fs::write(&p, format!("#!/bin/sh\n[ \"$1\" = __probe ] && exit 0\necho \"$@\" >> {dd}/calls.log\nfor u; do :; done\ncase \"$2\" in\n enable) touch {dd}/active.$u;;\n disable) rm -f {dd}/active.$u;;\n is-active) [ -f {dd}/active.$u ] || exit 1;;\nesac\nexit 0\n")).unwrap();
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        crate::firewall::exec_ready(&p);
         p
     }
     fn helper(d: &Path) -> PathBuf { let h = d.join("helper"); std::fs::write(&h, "x").unwrap(); h }
@@ -473,8 +474,9 @@ down0\t00000000\t0101A8C0\t0002\t0\t0\t1\t00000000\t0\t0\t0\n";
     fn fake_show(d: &Path) -> PathBuf {
         let p = d.join("showctl");
         let dd = d.display();
-        std::fs::write(&p, format!("#!/bin/sh\necho \"$@\" >> {dd}/calls.log\ncase \"$2\" in\n show) cat {dd}/show; exit 0;;\nesac\nexit 0\n")).unwrap();
+        std::fs::write(&p, format!("#!/bin/sh\n[ \"$1\" = __probe ] && exit 0\necho \"$@\" >> {dd}/calls.log\ncase \"$2\" in\n show) cat {dd}/show; exit 0;;\nesac\nexit 0\n")).unwrap();
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        crate::firewall::exec_ready(&p);
         p
     }
 
@@ -548,8 +550,9 @@ down0\t00000000\t0101A8C0\t0002\t0\t0\t1\t00000000\t0\t0\t0\n";
         std::fs::write(d.join("show"), "ActiveState=failed\nSubState=failed\nNRestarts=1\nResult=exit-code\n").unwrap();
         // reset-failed fails
         let ctl = d.join("badctl");
-        std::fs::write(&ctl, format!("#!/bin/sh\necho \"$@\" >> {0}/calls.log\ncase \"$2\" in show) cat {0}/show;; reset-failed) exit 1;; esac\nexit 0\n", d.display())).unwrap();
+        std::fs::write(&ctl, format!("#!/bin/sh\n[ \"$1\" = __probe ] && exit 0\necho \"$@\" >> {0}/calls.log\ncase \"$2\" in show) cat {0}/show;; reset-failed) exit 1;; esac\nexit 0\n", d.display())).unwrap();
         std::fs::set_permissions(&ctl, std::fs::Permissions::from_mode(0o755)).unwrap();
+        crate::firewall::exec_ready(&ctl);
         let (mut f, dir, _) = fb(&d);
         let mut variant = Some("vulkan".to_string());
         assert!(f.step(&ctl, &dir, &mut variant).is_err());
@@ -609,8 +612,9 @@ down0\t00000000\t0101A8C0\t0002\t0\t0\t1\t00000000\t0\t0\t0\n";
 
     fn pk(d: &Path, code: i32) -> PathBuf {
         let p = d.join("pkexec");
-        std::fs::write(&p, format!("#!/bin/sh\necho \"$@\" >> {}/pk.log\nexit {code}\n", d.display())).unwrap();
+        std::fs::write(&p, format!("#!/bin/sh\n[ \"$1\" = __probe ] && exit 0\necho \"$@\" >> {}/pk.log\nexit {code}\n", d.display())).unwrap();
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        crate::firewall::exec_ready(&p);
         p
     }
 
@@ -674,8 +678,9 @@ down0\t00000000\t0101A8C0\t0002\t0\t0\t1\t00000000\t0\t0\t0\n";
     fn fake_upgrade(d: &Path) -> PathBuf {
         let p = d.join("upctl");
         let dd = d.display();
-        std::fs::write(&p, format!("#!/bin/sh\necho \"$@\" >> {dd}/calls.log\nfor u; do :; done\ncase \"$2\" in\n show) case \"$4\" in ActiveState) cat {dd}/state;; MainPID) cat {dd}/pid;; esac; exit 0;;\n is-active) [ -f {dd}/active.$u ] || exit 1;;\n enable) touch {dd}/active.$u;;\nesac\nexit 0\n")).unwrap();
+        std::fs::write(&p, format!("#!/bin/sh\n[ \"$1\" = __probe ] && exit 0\necho \"$@\" >> {dd}/calls.log\nfor u; do :; done\ncase \"$2\" in\n show) case \"$4\" in ActiveState) cat {dd}/state;; MainPID) cat {dd}/pid;; esac; exit 0;;\n is-active) [ -f {dd}/active.$u ] || exit 1;;\n enable) touch {dd}/active.$u;;\nesac\nexit 0\n")).unwrap();
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        crate::firewall::exec_ready(&p);
         p
     }
 

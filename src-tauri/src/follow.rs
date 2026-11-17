@@ -286,6 +286,7 @@ impl Follower {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::firewall::exec_ready;
     use std::cell::RefCell;
     use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
@@ -308,17 +309,6 @@ mod tests {
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
         exec_ready(&p);
         p
-    }
-    /// Parallel tests fork while a script is being written, and a child that still holds the write fd makes the first exec fail with ETXTBSY (os error 26).
-    /// Probe until it can run; after that no copy of the write fd exists.
-    fn exec_ready(p: &Path) {
-        for _ in 0..200 {
-            match Command::new(p).arg("__probe").output() {
-                Err(e) if e.raw_os_error() == Some(26) => std::thread::sleep(std::time::Duration::from_millis(10)),
-                _ => return,
-            }
-        }
-        panic!("script never became executable");
     }
     fn calls(d: &Path) -> Vec<String> {
         std::fs::read_to_string(d.join("calls.log")).unwrap_or_default().lines().map(String::from).collect()

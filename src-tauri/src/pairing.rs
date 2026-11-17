@@ -1298,8 +1298,9 @@ mod tests {
 
     fn pkexec(d: &Path, code: i32) -> PathBuf {
         let p = d.join("pkexec");
-        std::fs::write(&p, format!("#!/bin/sh\necho \"$@\" >> {}/pk.log\nexit {code}\n", d.display())).unwrap();
+        std::fs::write(&p, format!("#!/bin/sh\n[ \"$1\" = __probe ] && exit 0\necho \"$@\" >> {}/pk.log\nexit {code}\n", d.display())).unwrap();
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        crate::firewall::exec_ready(&p);
         p
     }
 

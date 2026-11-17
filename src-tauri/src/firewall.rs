@@ -116,6 +116,20 @@ pub fn remove(pkexec: &Path, helper: &Path) -> Result<FwOutcome, String> {
     run(pkexec, helper, &["remove"])
 }
 
+/// Test helper for every fake script in this crate. Parallel tests fork while a script is being written, and a child that still holds the write fd makes the
+/// first exec fail with ETXTBSY (os error 26). Run the script with `__probe` until it can run (the script must exit 0 on `__probe` before doing anything);
+/// after that no copy of the write fd exists.
+#[cfg(test)]
+pub(crate) fn exec_ready(p: &Path) {
+    for _ in 0..200 {
+        match Command::new(p).arg("__probe").output() {
+            Err(e) if e.raw_os_error() == Some(26) => std::thread::sleep(std::time::Duration::from_millis(10)),
+            _ => return,
+        }
+    }
+    panic!("script never became executable");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -145,6 +159,7 @@ mod tests {
         let dd = d.display();
         std::fs::write(&p, format!(r#"#!/bin/sh
 D={dd}
+[ "$1" = __probe ] && exit 0
 echo "$@" >> $D/calls.log
 if [ "$1" = status ]; then
   if [ ! -f $D/active ]; then
@@ -163,6 +178,7 @@ if [ "$1" = --force ] && [ "$2" = delete ]; then awk -v n="$3" 'NR!=n' $D/rules 
 exit 0
 "#)).unwrap();
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        exec_ready(&p);
     }
     /// Copy of the shipped script in `d` with only its `UFW=` line pointed at `ufw_path`.
     fn script_copy(d: &Path, ufw_path: &Path) -> PathBuf {
@@ -439,9 +455,32 @@ exit 0
     /// Fake pkexec records argv and exits with the code in `code`.
     fn fake_pkexec(d: &Path, code: i32) -> PathBuf {
         let p = d.join("pkexec");
-        std::fs::write(&p, format!("#!/bin/sh\necho \"$@\" >> {}/pk.log\nexit {code}\n", d.display())).unwrap();
+        std::fs::write(&p, format!("#!/bin/sh\n[ \"$1\" = __probe ] && exit 0\necho \"$@\" >> {}/pk.log\nexit {code}\n", d.display())).unwrap();
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        exec_ready(&p);
         p
+    }
+
+    /// Review T1: a fake script run right after it was written failed with ETXTBSY (os error 26) when another test forked in that window.
+    /// The fakes now probe until they can run; this forks hard from other threads while writing and running them, and fails on the old fakes.
+    #[test]
+    fn a_fake_script_is_runnable_at_once_even_while_other_threads_fork() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let stop = std::sync::Arc::new(AtomicBool::new(false));
+        let forkers: Vec<_> = (0..3).map(|_| {
+            let s = stop.clone();
+            std::thread::spawn(move || while !s.load(Ordering::Relaxed) { let _ = Command::new("/bin/true").status(); })
+        }).collect();
+        let mut bad = vec![];
+        for i in 0..100 {
+            let d = tmp(&format!("etx{i}"));
+            let p = fake_pkexec(&d, 0);
+            match Command::new(&p).arg("go").status() { Ok(_) => {}, Err(e) => bad.push(format!("{i}: {e}")) }
+            let _ = std::fs::remove_dir_all(&d);
+        }
+        stop.store(true, Ordering::Relaxed);
+        for f in forkers { f.join().unwrap(); }
+        assert!(bad.is_empty(), "{} of 100 fake scripts hit ETXTBSY: {:?}", bad.len(), &bad[..bad.len().min(3)]);
     }
 
     #[test]

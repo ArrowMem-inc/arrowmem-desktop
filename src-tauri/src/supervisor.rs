@@ -826,8 +826,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         let bin = d.join("fakecompanion");
-        std::fs::write(&bin, format!("#!/bin/sh\necho \"key=$ARROWBRIDGE_UPSTREAM_KEY\" > {0}/env.out\necho \"args=$@\" >> {0}/env.out\n", d.display())).unwrap();
+        std::fs::write(&bin, format!("#!/bin/sh\n[ \"$1\" = __probe ] && exit 0\necho \"key=$ARROWBRIDGE_UPSTREAM_KEY\" > {0}/env.out\necho \"args=$@\" >> {0}/env.out\n", d.display())).unwrap();
         std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        crate::firewall::exec_ready(&bin);
         let key = "cd".repeat(32);
         let mut l = RealLauncher { binary: bin.clone(), port: 1, upstream_url: Some("http://127.0.0.1:1".into()), upstream_key: Some(key.clone()) };
         let mut child = l.spawn().unwrap();
@@ -927,6 +928,8 @@ mod tests {
     /// A stand-in daemon: honours `run --config P`, binds chat_addr from the config, answers /v1/status 423 to its token file's bearer and 401 to anyone else.
     const FAKE_MESH: &str = r#"#!/usr/bin/env python3
 import sys, http.server
+if sys.argv[1:] == ["__probe"]:
+    sys.exit(0)
 conf = sys.argv[sys.argv.index("--config") + 1]
 kv = {}
 for line in open(conf):
@@ -949,6 +952,7 @@ http.server.ThreadingHTTPServer(("127.0.0.1", port), H).serve_forever()
         let b = d.join("fake-arrowmesh");
         std::fs::write(&b, FAKE_MESH).unwrap();
         std::fs::set_permissions(&b, std::fs::Permissions::from_mode(0o755)).unwrap();
+        crate::firewall::exec_ready(&b);
         b
     }
 
@@ -1010,8 +1014,9 @@ http.server.ThreadingHTTPServer(("127.0.0.1", port), H).serve_forever()
         let d = mtmp("occupied");
         let marker = d.join("ran");
         let bin = d.join("bin");
-        std::fs::write(&bin, format!("#!/bin/sh\ntouch {}\n", marker.display())).unwrap();
+        std::fs::write(&bin, format!("#!/bin/sh\n[ \"$1\" = __probe ] && exit 0\ntouch {}\n", marker.display())).unwrap();
         std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        crate::firewall::exec_ready(&bin);
         for occupy_mesh in [false, true] {
             let held = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
             let held_port = held.local_addr().unwrap().port();

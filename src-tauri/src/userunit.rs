@@ -293,8 +293,9 @@ mod tests {
     fn fake(d: &Path) -> PathBuf {
         let p = d.join("fakectl");
         let dd = d.display();
-        std::fs::write(&p, format!("#!/bin/sh\necho \"$@\" >> {dd}/calls.log\nif [ -f {dd}/failon ] && echo \"$@\" | grep -q -- \"$(cat {dd}/failon)\"; then exit 1; fi\ncase \"$2\" in\n disable|stop) [ -f {dd}/stuck ] || touch {dd}/inactive;;\n enable) rm -f {dd}/inactive;;\n is-active) [ -f {dd}/inactive ] && exit 1;;\nesac\nexit 0\n")).unwrap();
+        std::fs::write(&p, format!("#!/bin/sh\n[ \"$1\" = __probe ] && exit 0\necho \"$@\" >> {dd}/calls.log\nif [ -f {dd}/failon ] && echo \"$@\" | grep -q -- \"$(cat {dd}/failon)\"; then exit 1; fi\ncase \"$2\" in\n disable|stop) [ -f {dd}/stuck ] || touch {dd}/inactive;;\n enable) rm -f {dd}/inactive;;\n is-active) [ -f {dd}/inactive ] && exit 1;;\nesac\nexit 0\n")).unwrap();
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        crate::firewall::exec_ready(&p);
         p
     }
 
