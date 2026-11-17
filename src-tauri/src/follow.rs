@@ -179,7 +179,11 @@ impl Follower {
             self.deferred_since = None;
             self.failed = None;
             self.gap = false;
-            return if after_gap { Step::Resumed(self.firewall(self.bound, to, true, h)) } else { Step::Unchanged };
+            if !after_gap {
+                return Step::Unchanged;
+            }
+            (h.bound)(to); // review N3: lib.rs took Info.lan to None on NoAddress; the same address coming back must restore it
+            return Step::Resumed(self.firewall(self.bound, to, true, h));
         }
         if let Some((t, until)) = self.failed {
             if t == to && now < until {
@@ -290,7 +294,6 @@ mod tests {
     use std::cell::RefCell;
     use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
-    use std::process::Command;
 
     fn ip(s: &str) -> Ipv4Addr { s.parse().unwrap() }
     fn ifc(name: &str, a: &str) -> Iface { Iface { name: name.into(), ip: ip(a), mask: ip("255.255.255.0") } }
@@ -399,6 +402,8 @@ mod tests {
         assert_eq!(r.tick(&mut f, &hotspot_net(), Some("wlan0"), 6), Step::Resumed(FwStep::Done));
         assert!(calls(&r.d).is_empty());
         assert_eq!(r.fw(), vec!["allow 10.42.0.0/24"]);
+        // review N3: the bound hook ran again, so Info.lan is restored (lib.rs takes it to None on NoAddress)
+        assert_eq!(*r.bound.borrow(), vec![lan("10.42.0.1")], "Resumed did not restore the address");
         // a different network returns: the old one is withdrawn then
         let s = r.tick(&mut f, &lan_net(), Some("enp3s0"), 9);
         assert!(matches!(s, Step::Followed { firewall: FwStep::Done, .. }), "{s:?}");
