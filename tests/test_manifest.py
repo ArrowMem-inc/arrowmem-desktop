@@ -32,7 +32,7 @@ class T(unittest.TestCase):
     def test_larger_tier_exists(self):
         self.assertGreater(max(e["tier"] for e in M["models"]), [e for e in M["models"] if e["default"]][0]["tier"])
     def test_the_approved_list_is_the_ruled_six(self):
-        # The two small defaults plus the four larger tiers ruled in R-514 ADD 192 and ADD 193; the two gemma candidates stay unapproved.
+        # The two small defaults plus the four larger tiers approved by name; the two gemma candidates stay unapproved.
         self.assertEqual(sorted(e["id"] for e in M["models"] if e["approved"]), [
             "gemma-4-E2B-it-q4_0", "gemma-4-E4B-it-q4_0", "gpt-oss-120b-mxfp4",
             "qwen3-14b-q4_k_m", "qwen3-235b-a22b-q4_k_m", "qwen3-32b-q4_k_m"])

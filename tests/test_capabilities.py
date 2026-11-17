@@ -46,7 +46,11 @@ class Caps(unittest.TestCase):
     def test_main_keeps_default_and_no_window_is_in_two_capabilities(self):
         d = load("default.json")
         self.assertEqual(d["windows"], ["main"])
-        self.assertFalse(any("shell" in str(p) for p in d["permissions"]))  # no shell plugin: every child is spawned by path from supervisor.rs
+        # The exact grant list: no shell plugin (every child is spawned by path from supervisor.rs), only the named commands.
+        self.assertEqual(d["permissions"], [
+            "core:default", "allow-home-view", "allow-restart-service", "allow-model-options", "allow-model-download",
+            "allow-model-choose", "allow-open-pairing", "allow-pair-state", "allow-pair-confirm", "allow-pair-cancel",
+            "allow-retry-firewall", "allow-status-texts"])
         seen = [load(w)["windows"][0] for w in ("status.json", "uninstall.json", "mesh.json")] + d["windows"]
         self.assertEqual(len(seen), len(set(seen)))
 
