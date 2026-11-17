@@ -212,8 +212,10 @@ fn follow_loop(app: tauri::AppHandle) {
         let busy = || matches!(pairing::fetch_pair_state(pairing::COMPANION_PORT), pairing::PairState::Waiting | pairing::PairState::Revealed { .. } | pairing::PairState::Confirmed);
         let hooks = follow::Hooks { bound: &bound, allow: &follow::defer_allow, remove: &follow::defer_remove, busy: &busy };
         f.stale = info.stale.lock().unwrap().clone();
+        let before = f.stale.clone();
         let step = f.tick(&ifaces, default_if.as_deref(), &ctx, &hooks, t0.elapsed().as_secs());
-        *info.stale.lock().unwrap() = f.stale.clone();
+        // Merged, not replaced: the button may have changed the list while the tick ran (review N2).
+        follow::merge_stale(&mut info.stale.lock().unwrap(), &before, &f.stale);
         {
             let mut w = info.fw_wait.lock().unwrap();
             *w = follow::waiting_after(&step, *w);
@@ -497,9 +499,10 @@ fn retry_firewall(info: tauri::State<Info>) -> Result<String, String> {
     // and with no address at all they are withdrawn alone (review C2).
     #[cfg(target_os = "linux")]
     let r = {
-        let mut stale = info.stale.lock().unwrap().clone();
+        let before = info.stale.lock().unwrap().clone();
+        let mut stale = before.clone();
         let r = follow::press_button(&mut stale, lan, &|l| pairing::retry_firewall(&dir, Some(l), pkexec, helper), &|c| firewall::remove_for(pkexec, helper, c));
-        *info.stale.lock().unwrap() = stale;
+        follow::merge_stale(&mut info.stale.lock().unwrap(), &before, &stale); // merged, not replaced (review N2)
         r?
     };
     #[cfg(not(target_os = "linux"))]

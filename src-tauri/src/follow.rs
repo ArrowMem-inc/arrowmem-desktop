@@ -111,6 +111,18 @@ pub fn withdraw_stale(stale: &mut Vec<String>, current: Option<&str>, remove: &d
     stale.is_empty()
 }
 
+/// Review N2: the poll thread and the window's button each work on a clone of the shared stale list across slow steps (a restart, a polkit prompt).
+/// Writing a clone back whole loses what the other thread did meanwhile. This writes back only this thread's own changes: what it removed
+/// (in `before`, not in `after`) comes off the shared list, what it parked (in `after`, not in `before`) goes on if it is not there already.
+pub fn merge_stale(shared: &mut Vec<String>, before: &[String], after: &[String]) {
+    shared.retain(|c| !before.contains(c) || after.contains(c));
+    for c in after {
+        if !before.contains(c) && !shared.contains(c) {
+            shared.push(c.clone());
+        }
+    }
+}
+
 /// The window's firewall button. With an address: allow the network that is up, then withdraw the stale ones. With no address (review C2): there is
 /// nothing to allow, but the networks left behind are still withdrawn, so a rule is never left standing for a later network with the same numbering.
 /// With no address and nothing stale there is nothing to do, which is the old "no private network address" error.
@@ -719,6 +731,34 @@ mod tests {
         assert_eq!(press_button(&mut f.stale, cur, &|_| Ok(FwOutcome::Done), &|c| firewall::remove_for(&pk_on, &helper, c)), Ok(FwOutcome::Done));
         assert!(f.stale.is_empty());
         assert!(std::fs::read_to_string(r.d.join("pk.log")).unwrap().contains("remove 10.42.0.0/24"));
+    }
+
+    /// Review N2: a press that overlaps a tick which parks a network must not write the list back without it, and the press's own withdrawal must
+    /// still land. Two real threads share one Mutex the way Info.stale is shared.
+    #[test]
+    fn a_park_during_a_press_survives_the_press_writing_back() {
+        use std::sync::{mpsc, Arc, Mutex};
+        let shared = Arc::new(Mutex::new(vec!["192.168.1.0/24".to_string()]));
+        let (in_prompt, prompt_open) = mpsc::channel::<()>();
+        let (release, held) = mpsc::channel::<()>();
+        let s2 = shared.clone();
+        let press = std::thread::spawn(move || {
+            let before = s2.lock().unwrap().clone();
+            let mut mine = before.clone();
+            let r = press_button(&mut mine, None, &|_| Ok(FwOutcome::Done), &|_| { in_prompt.send(()).unwrap(); held.recv().unwrap(); Ok(FwOutcome::Done) });
+            merge_stale(&mut s2.lock().unwrap(), &before, &mine);
+            r
+        });
+        prompt_open.recv().unwrap(); // the press is inside its slow remove, holding the old snapshot
+        let r = Rig::new("n2");
+        let mut f = at("10.42.0.1");
+        f.stale = shared.lock().unwrap().clone();
+        let before = f.stale.clone();
+        assert_eq!(r.tick(&mut f, &noise(), None, 0), Step::NoAddress); // parks 10.42.0.0/24
+        merge_stale(&mut shared.lock().unwrap(), &before, &f.stale);
+        release.send(()).unwrap();
+        assert_eq!(press.join().unwrap(), Ok(FwOutcome::Done));
+        assert_eq!(*shared.lock().unwrap(), vec!["10.42.0.0/24"], "the parked network was lost, or the withdrawn one came back");
     }
 
     /// Review N1: with ufw inactive a press answers NoFirewall, keeps every stale entry (C4), and the "cannot reach ArrowBridge until you approve"
