@@ -45,7 +45,8 @@ mod tests {
         let scratch = TmpDir::new("testtmp-scratch");
         let out = Command::new(std::env::current_exe().unwrap())
             .args(["modelpick::tests::", "follow::tests::", "apikey::tests::", "minicred::tests::", "firstrun::tests::", "firewall::tests::",
-                   "userunit::tests::", "uninstall::tests::", "linuxrun::tests::", "pairing::tests::", "--test-threads=4"])
+                   "userunit::tests::", "uninstall::tests::", "linuxrun::tests::", "pairing::tests::",
+                   "supervisor::tests::", "models::tests::", "desktop::tests::", "mini_remote::tests::", "--test-threads=4"])
             .env("TMPDIR", &*scratch)
             .output()
             .unwrap();

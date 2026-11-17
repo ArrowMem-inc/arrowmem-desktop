@@ -62,8 +62,7 @@ mod tests {
 
     #[test]
     fn install_and_remove_round_trip() {
-        let d = std::env::temp_dir().join(format!("desk-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
+        let d = crate::testtmp::TmpDir::absent("desk");
         let (a, i) = data_dirs(Some(d.to_str().unwrap()), "/nope");
         assert_eq!(a, d.join("applications"));
         install_launcher(&a, &i, "/x/app").unwrap();

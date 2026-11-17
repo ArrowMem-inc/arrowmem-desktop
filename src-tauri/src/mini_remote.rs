@@ -79,10 +79,8 @@ mod tests {
     const CRED: &[u8] = b"pc_remoteListingCredential_0123456789ab";
     const MID: [u8; 16] = [0x5a; 16];
 
-    fn dir(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("miniremote-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        d
+    fn dir(tag: &str) -> crate::testtmp::TmpDir {
+        crate::testtmp::TmpDir::absent(&format!("miniremote-{tag}"))
     }
 
     /// An in process companion: no socket. Seals under the keys the real derivation gives.
@@ -126,16 +124,16 @@ mod tests {
     }
     const LIST: &str = r#"{"models":[{"id":"default","label":"One","size_bytes":null,"quant":null,"loaded":true}]}"#;
 
-    fn paired(tag: &str, mid: &[u8]) -> (MiniRemote, minicred::Pin) {
+    fn paired(tag: &str, mid: &[u8]) -> (MiniRemote, minicred::Pin, crate::testtmp::TmpDir) {
         let d = dir(tag);
         let pin = minicred::Pin::new(&ip(192, 168, 4, 20), 8788, CRED, mid).unwrap();
         minicred::save(&d, &pin).unwrap();
-        (MiniRemote::new(d), pin)
+        (MiniRemote::new(d.to_path_buf()), pin, d)
     }
 
     #[test]
     fn a_matching_machine_id_and_a_200_list_give_the_body() {
-        let (r, pin) = paired("ok", &MID);
+        let (r, pin, _g) = paired("ok", &MID);
         let f = fake(Some(MID), 200, LIST);
         assert_eq!(r.listing_via(&f, CRED, &pin).as_deref(), Some(LIST));
         assert_eq!(*f.calls.lock().unwrap(), ["session-open", "chat"]);
@@ -143,14 +141,14 @@ mod tests {
 
     #[test]
     fn a_different_machine_id_reads_unknown_even_with_a_good_list() {
-        let (r, pin) = paired("other", &MID);
+        let (r, pin, _g) = paired("other", &MID);
         assert_eq!(r.listing_via(&fake(Some([0x6b; 16]), 200, LIST), CRED, &pin), None);
         assert_eq!(r.listing_via(&fake(None, 200, LIST), CRED, &pin), None, "a pinned id that stopped being sealed");
     }
 
     #[test]
     fn every_failure_is_none_and_never_an_empty_listing() {
-        let (r, pin) = paired("fails", &MID);
+        let (r, pin, _g) = paired("fails", &MID);
         for (st, body) in [(400u16, LIST), (401, LIST), (429, LIST), (503, LIST), (200, r#"{"models":[]}"#), (200, "{}"), (200, "[]"), (200, "garbage")] {
             assert_eq!(r.listing_via(&fake(Some(MID), st, body), CRED, &pin), None, "{st} {body}");
         }
@@ -165,7 +163,7 @@ mod tests {
 
     #[test]
     fn an_opened_body_replays_through_parse_remote_and_empty_or_failed_reads_unknown() {
-        let (r, pin) = paired("replay", &MID);
+        let (r, pin, _g) = paired("replay", &MID);
         assert_eq!(rows(&r, &pin, &fake(Some(MID), 200, LIST)), Some(Ok(1)));
         let two = r#"{"models":[{"id":"a","label":"A"},{"id":"b","label":null,"loaded":false}]}"#;
         assert_eq!(rows(&r, &pin, &fake(Some(MID), 200, two)), Some(Ok(2)));
@@ -179,7 +177,7 @@ mod tests {
 
     #[test]
     fn thirty_calls_in_a_minute_open_at_most_four_sessions_and_a_stale_answer_is_never_served() {
-        let (r, pin) = paired("budget", &MID);
+        let (r, pin, _g) = paired("budget", &MID);
         let f = fake(Some(MID), 200, LIST);
         let t0 = std::time::Instant::now();
         let mut got = Vec::new();
@@ -198,7 +196,8 @@ mod tests {
 
     #[test]
     fn with_no_pairing_file_or_a_refused_address_nothing_is_dialled_and_the_group_is_unknown() {
-        assert_eq!(MiniRemote::new(dir("none")).remote_listing(), None);
+        let none = dir("none");
+        assert_eq!(MiniRemote::new(none.to_path_buf()).remote_listing(), None);
         // a pin file whose address the gate refuses reads as unpaired before any socket
         let d = dir("refused");
         std::fs::create_dir_all(&d).unwrap();
@@ -206,7 +205,7 @@ mod tests {
         let p = d.join(minicred::FILE);
         std::fs::write(&p, format!(r#"{{"host":"{}","port":8788,"credential":"{}","machine_id":""}}"#, ip(127, 0, 0, 1), String::from_utf8_lossy(CRED))).unwrap();
         std::fs::set_permissions(&p, std::os::unix::fs::PermissionsExt::from_mode(0o600)).unwrap();
-        assert_eq!(MiniRemote::new(d).remote_listing(), None);
+        assert_eq!(MiniRemote::new(d.to_path_buf()).remote_listing(), None);
     }
 
     // 6. the source guard: no log call anywhere, no write outside the credential store

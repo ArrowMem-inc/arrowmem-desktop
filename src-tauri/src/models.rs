@@ -405,10 +405,8 @@ mod tests {
         let url = e.url();
         (Manifest { models: vec![e] }, url)
     }
-    fn tmp(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("arrowmem-dl-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&d);
-        d
+    fn tmp(name: &str) -> crate::testtmp::TmpDir {
+        crate::testtmp::TmpDir::absent(&format!("arrowmem-dl-{name}"))
     }
 
     #[test]
@@ -533,8 +531,7 @@ mod tests {
         let port = serve_map(vec![("split-00001-of-00002.gguf".into(), a.clone()), ("split-00002-of-00002.gguf".into(), b.clone())]);
         let model = split_model(port, &a, &b);
         let mf = Manifest { models: vec![model.clone()] };
-        let dir = std::env::temp_dir().join(format!("split-dl-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
+        let dir = crate::testtmp::TmpDir::absent("split-dl");
         assert!(!installed_cheap(&model, &dir) && bytes_so_far(&model, &dir) == 0);
         let main = download(&mf, &model.url(), &dir).unwrap();
         assert_eq!(main, dir.join("split-00001-of-00002.gguf"), "the first shard is the file llama-server is pointed at");
@@ -556,8 +553,7 @@ mod tests {
         let port = serve_map(vec![("split-00001-of-00002.gguf".into(), a.clone()), ("split-00002-of-00002.gguf".into(), wrong)]);
         let model = split_model(port, &a, &b);
         let mf = Manifest { models: vec![model.clone()] };
-        let dir = std::env::temp_dir().join(format!("split-bad-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
+        let dir = crate::testtmp::TmpDir::absent("split-bad");
         assert!(matches!(download(&mf, &model.url(), &dir), Err(DlError::BadHash)));
         assert!(!dir.join("split-00002-of-00002.gguf").exists(), "the wrong shard never gets its final name");
         assert!(!verified(&model, &dir.join("split-00001-of-00002.gguf")));
@@ -567,8 +563,7 @@ mod tests {
     fn presence_tells_missing_partial_good_and_wrong_bytes_apart() {
         let (a, b) = (b"first shard bytes".to_vec(), b"second shard, a little longer".to_vec());
         let model = split_model(1, &a, &b);
-        let dir = std::env::temp_dir().join(format!("presence-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
+        let dir = crate::testtmp::TmpDir::absent("presence");
         fs::create_dir_all(&dir).unwrap();
         assert_eq!(presence(&model, &dir), Presence::Missing);
         fs::write(dir.join("split-00001-of-00002.gguf"), &a).unwrap();
@@ -592,8 +587,7 @@ mod tests {
         let a = b"shard one".to_vec();
         let b = b"shard two longer".to_vec();
         let model = split_model(1, &a, &b);
-        let dir = std::env::temp_dir().join(format!("proofs-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
+        let dir = crate::testtmp::TmpDir::absent("proofs");
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("split-00001-of-00002.gguf"), &a).unwrap();
         fs::write(dir.join("split-00002-of-00002.gguf"), &b).unwrap();
