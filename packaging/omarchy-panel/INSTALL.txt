@@ -1,0 +1,33 @@
+ArrowBridge bar panel, first cut (B1). Install note. Nothing here has been run by the builder.
+
+WHAT IT NEEDS
+  The ArrowMem desktop app running with the owner listener (127.0.0.1, port 8789 unless
+  ARROWMEM_OWNER_PORT is set; 1024 or above). The panel talks to that listener only.
+
+WHERE THE FILES GO
+  Plugin folder (id arrowmem.bridge):
+    ~/.config/omarchy/plugins/arrowbridge-panel/
+      manifest.json  Panel.qml  Service.qml  Model.js  i18n/en.json
+      bin/arrowbridge-panel      the Rust helper, built from crates/arrowbridge-panel, never committed
+
+BUILD AND COPY (from the repo root)
+  cargo build --release --manifest-path crates/arrowbridge-panel/Cargo.toml
+  mkdir -p ~/.config/omarchy/plugins/arrowbridge-panel/bin
+  cp -r packaging/omarchy-panel/arrowbridge-panel/. ~/.config/omarchy/plugins/arrowbridge-panel/
+  cp "${CARGO_TARGET_DIR:-crates/arrowbridge-panel/target}/release/arrowbridge-panel" ~/.config/omarchy/plugins/arrowbridge-panel/bin/
+
+THE ONE LINE THAT ENABLES IT
+  omarchy plugin enable arrowmem.bridge
+  (If it answers "not known": omarchy-shell shell rescanPlugins, then the line again.
+   Bar placement is his call, not set here; omarchy plugin enable arrowmem.bridge --section right
+   would place it, for example.)
+
+BEFORE THE FIRST LOOK
+  Every string and size marked FILL in en.json, manifest.json and Panel.qml is a placeholder
+  awaiting a render and cleared copy. The bar icon will read FILL until the glyph is chosen.
+  Settings (shell.json entry for the widget): ownerPort (default 8789), refreshIntervalSec
+  (default 5, minimum 3 because the listener admits one request per route per 2 s).
+
+WHAT IT DOES NOT DO
+  Writes no file, keeps no cache, polls only while the popup is open, never touches the
+  router or any key. A group that does not answer in time reads unknown.
