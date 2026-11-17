@@ -717,7 +717,7 @@ mod tests {
 
     #[test]
     fn llama_launcher_binds_loopback_and_refuses_unverified_model() {
-        let dir = std::env::temp_dir().join(format!("arrowmem-ll-{}", std::process::id()));
+        let dir = crate::testtmp::TmpDir::absent("arrowmem-ll");
         std::fs::create_dir_all(&dir).unwrap();
         let f = dir.join("m.gguf");
         std::fs::write(&f, b"hello").unwrap();
@@ -757,7 +757,7 @@ mod tests {
     #[ignore]
     fn stub_llama_start_crash_restart_stop() {
         let binary = PathBuf::from(std::env::var("ARROWMEM_STUB_BIN").expect("set ARROWMEM_STUB_BIN"));
-        let dir = std::env::temp_dir().join(format!("arrowmem-stub-{}", std::process::id()));
+        let dir = crate::testtmp::TmpDir::absent("arrowmem-stub");
         std::fs::create_dir_all(&dir).unwrap();
         let f = dir.join("tiny.gguf");
         std::fs::write(&f, b"hello").unwrap();
@@ -822,8 +822,7 @@ mod tests {
     #[test]
     fn companion_child_gets_the_key_in_its_environment_and_never_in_argv() {
         use std::os::unix::fs::PermissionsExt;
-        let d = std::env::temp_dir().join(format!("childkey-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
+        let d = crate::testtmp::TmpDir::absent("childkey");
         std::fs::create_dir_all(&d).unwrap();
         let bin = d.join("fakecompanion");
         std::fs::write(&bin, format!("#!/bin/sh\n[ \"$1\" = __probe ] && exit 0\necho \"key=$ARROWBRIDGE_UPSTREAM_KEY\" > {0}/env.out\necho \"args=$@\" >> {0}/env.out\n", d.display())).unwrap();
@@ -853,8 +852,7 @@ mod tests {
 
     #[test]
     fn llama_variant_follows_the_device_and_what_is_installed() {
-        let d = std::env::temp_dir().join(format!("llamavar-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
+        let d = crate::testtmp::TmpDir::absent("llamavar");
         let (exe, sys) = (d.join("bin"), d.join("lib"));
         std::fs::create_dir_all(&exe).unwrap();
         std::fs::create_dir_all(&sys).unwrap();
@@ -871,8 +869,7 @@ mod tests {
 
     #[test]
     fn vulkan_needs_a_render_node_and_the_loader() {
-        let d = std::env::temp_dir().join(format!("vkpres-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
+        let d = crate::testtmp::TmpDir::absent("vkpres");
         let (dri, lib) = (d.join("dri"), d.join("lib"));
         std::fs::create_dir_all(&dri).unwrap();
         std::fs::create_dir_all(&lib).unwrap();
@@ -890,8 +887,7 @@ mod tests {
 
     #[test]
     fn sidecar_resolution_order() {
-        let d = std::env::temp_dir().join(format!("sidecar-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
+        let d = crate::testtmp::TmpDir::absent("sidecar");
         let (exe, sys) = (d.join("bin"), d.join("lib"));
         std::fs::create_dir_all(&exe).unwrap();
         std::fs::create_dir_all(&sys).unwrap();
@@ -913,11 +909,8 @@ mod tests {
 
     // ---- arrowmesh launcher ----
 
-    fn mtmp(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("am-mesh-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn mtmp(tag: &str) -> crate::testtmp::TmpDir {
+        crate::testtmp::TmpDir::new(&format!("am-mesh-{tag}"))
     }
 
     fn key_in(d: &Path) -> PathBuf {
