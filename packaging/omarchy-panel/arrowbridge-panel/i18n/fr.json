@@ -1,0 +1,18 @@
+{
+  "paused.note": "La tâche de programmation est en pause pendant que vous discutez. Elle reprend quand vous avez terminé.",
+  "list.unavailable": "La liste des modèles est indisponible. Seul le modèle chargé est affiché.",
+  "pick.refused": "La tâche de programmation n'a pas pu être mise en pause, donc le modèle n'a pas été changé. Réessayez.",
+  "host.local": "cet ordinateur",
+  "host.remote": "à distance",
+  "bar.glyph": "FILL",
+  "bar.tooltip": "Modèles ArrowBridge",
+  "title": "ArrowBridge",
+  "unknown.line": "Aucune réponse. L'état est inconnu.",
+  "empty.line": "Aucun modèle trouvé.",
+  "action.pause": "Pause",
+  "action.resume": "Reprendre",
+  "action.refresh": "Actualiser",
+  "outcome.paused": "La tâche de programmation est en pause.",
+  "outcome.free": "La tâche de programmation n'est pas en pause.",
+  "outcome.unknown": "Aucune réponse d'ArrowBridge. L'état de la tâche de programmation est inconnu."
+}

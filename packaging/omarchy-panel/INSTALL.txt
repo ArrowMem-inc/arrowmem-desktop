@@ -7,7 +7,7 @@ WHAT IT NEEDS
 WHERE THE FILES GO
   Plugin folder (id arrowmem.bridge):
     ~/.config/omarchy/plugins/arrowbridge-panel/
-      manifest.json  Panel.qml  Service.qml  Model.js  i18n/en.json
+      manifest.json  Panel.qml  Service.qml  Model.js  i18n/en.json  i18n/fr.json
       bin/arrowbridge-panel      the Rust helper, built from crates/arrowbridge-panel, never committed
 
 BUILD AND COPY (from the repo root)
@@ -23,7 +23,7 @@ THE ONE LINE THAT ENABLES IT
    would place it, for example.)
 
 BEFORE THE FIRST LOOK
-  Every string and size marked FILL in en.json, manifest.json and Panel.qml is a placeholder
+  Every string and size marked FILL in i18n, manifest.json and Panel.qml is a placeholder
   awaiting a render and cleared copy. The bar icon will read FILL until the glyph is chosen.
   Settings (shell.json entry for the widget): ownerPort (default 8789), refreshIntervalSec
   (default 5, minimum 3 because the listener admits one request per route per 2 s).
