@@ -1,0 +1,69 @@
+{
+ "rule": "code = '%06d' % (int.from_bytes(HKDF(info=b'arrowbridge-pairing-code|' + companion_pub + phone_pub, salt=phone_nonce + companion_nonce)[:4], 'big') % 1000000)",
+ "cases": [
+  {
+   "shared_secret": "2ed76ab549b1e73c031eb49c9448f0798aea81b698279a0c3dc3e49fbfc4b953",
+   "phone_nonce": "03030303030303030303030303030303",
+   "companion_nonce": "04040404040404040404040404040404",
+   "companion_pub": "ce8d3ad1ccb633ec7b70c17814a5c76ecd029685050d344745ba05870e587d59",
+   "phone_pub": "a4e09292b651c278b9772c569f5fa9bb13d906b46ab68c9df9dc2b4409f8a209",
+   "code": "275993"
+  },
+  {
+   "shared_secret": "edfa360a9633ca9b6fe655be8849389323ae3a3444866567f463c8e2c80bbb5a",
+   "phone_nonce": "07070707070707070707070707070707",
+   "companion_nonce": "08080808080808080808080808080808",
+   "companion_pub": "f5b2d6e60f9477e310c2982daaa6c9136c108a1777c5947e448fa37d68174557",
+   "phone_pub": "50a61409b1ddd0325e9b16b700e719e9772c07000b1bd7786e907c653d20495d",
+   "code": "410462"
+  },
+  {
+   "shared_secret": "d0269e71d74061ec55e16979384a11ea95e318ffdb52a299eb488ae36523a659",
+   "phone_nonce": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+   "companion_nonce": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c",
+   "companion_pub": "f77ff4b10788bfdca62ca0bb160d427cf5762d85f2b5cad6807ec9c3febbde09",
+   "phone_pub": "57db4b359f23ae5e146e4e2512056704722506348c150c14753d0c933d04d421",
+   "code": "392200"
+  },
+  {
+   "shared_secret": "627b211d41be0fb5035da44da132e319a8b3db75fcdb6e86a408c25c53abb545",
+   "phone_nonce": "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f",
+   "companion_nonce": "10101010101010101010101010101010",
+   "companion_pub": "5855784cb3c8c796d84ac93e8f4a53dab0bb31e80960042cfa87f03a4293b308",
+   "phone_pub": "b307ae8660efaed4d6a65f6640896892ea4a1f0075555c489d1312a2e1677c28",
+   "code": "969275"
+  },
+  {
+   "shared_secret": "0a8b7643c0576a2cf7023b77d98843922eabbc844d39766cc8eaaf7dd355753e",
+   "phone_nonce": "13131313131313131313131313131313",
+   "companion_nonce": "14141414141414141414141414141414",
+   "companion_pub": "052a50773ac8d91773f2dc9662e12f0defe915e415b8a1c8e20a5a3d6ab2b843",
+   "phone_pub": "7b4e909bbe7ffe44c465a220037d608ee35897d31ef972f07f74892cb0f73f13",
+   "code": "595324"
+  },
+  {
+   "shared_secret": "c6b3987491d3eb4ae5429abea1a0c9c6a43d9796ad4acabc2db2dcb39ab0720f",
+   "phone_nonce": "17171717171717171717171717171717",
+   "companion_nonce": "18181818181818181818181818181818",
+   "companion_pub": "7f442fb4ecc9dd6cde4635881fbe2bb433b67b004935c4330d21e36f681a0e12",
+   "phone_pub": "bce059bf5b2ab7a91f3e863acf0c84d3ebbe04ca8490094b052b5b15afab1743",
+   "code": "282081"
+  },
+  {
+   "shared_secret": "43b725d0323f273756b6e46324ec5b49a810331b66dc7717e1136ca296e4756d",
+   "phone_nonce": "1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b",
+   "companion_nonce": "1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c",
+   "companion_pub": "6667427553076c7e43074151d9f45476ec7589a135337bf8dd54be2c6eea8e29",
+   "phone_pub": "973ac258850f1ca00630b7aaa5cd9ab76ef29265eb81061618b7874cfa2ba156",
+   "code": "287187"
+  },
+  {
+   "shared_secret": "00240fedda9dba3da64b75705448738cd355b7c8e699bc0ef4d9add4c9abce0b",
+   "phone_nonce": "1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f",
+   "companion_nonce": "20202020202020202020202020202020",
+   "companion_pub": "17d224cc4d780e69a8af7bdf46ef4910a0d3e425af656c345726b448591f1f31",
+   "phone_pub": "51ddf3cb36a42fdf3d6a81dfcaada9fe17818aa145548a08e51f2d73e9452478",
+   "code": "551008"
+  }
+ ]
+}

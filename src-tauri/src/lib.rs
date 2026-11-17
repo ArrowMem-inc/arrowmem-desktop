@@ -22,6 +22,14 @@ pub mod apikey;
 pub mod pairing;
 #[cfg(unix)]
 pub mod uninstall;
+#[cfg(unix)]
+pub mod sealed;
+#[cfg(unix)]
+pub mod minicred;
+#[cfg(unix)]
+pub mod mini_pair;
+#[cfg(unix)]
+pub mod mini_remote;
 
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
