@@ -137,7 +137,7 @@ class Files(unittest.TestCase):
         # spawned by path from supervisor.rs, never through the shell plugin. A flat externalBin entry would make
         # the build look for binaries/llama-server-<triple>, which fetch-sidecars never writes.
         conf = json.load(open(os.path.join(R, "src-tauri", "tauri.conf.json")))
-        self.assertEqual(conf["bundle"]["externalBin"], ["binaries/arrowbridge-companion", "binaries/arrowmesh"])
+        self.assertEqual(conf["bundle"]["externalBin"], ["binaries/arrowbridge-companion"])
         caps =open(os.path.join(R, "src-tauri", "capabilities", "default.json")).read()
         self.assertNotIn("llama-server", caps)
 
@@ -239,6 +239,23 @@ class Files(unittest.TestCase):
         self.assertIn("LEAK: " + binp, out); self.assertIn("stage", out)
         out = self._scan({binp: self.CLEAN_BIN, ".BUILDINFO": self.CLEAN_BI + b"buildenv = /tmp/ab-clean/x\n"})
         self.assertIn("LEAK: .BUILDINFO", out); self.assertIn("stage", out)
+
+    def test_manifest_tells_the_truth_about_what_ships(self):
+        # F5, option B: every externalBin name has an install line in the PKGBUILD, nothing is stood in by a stub, and the package
+        # scan refuses any arrowmesh file until the daemon round adds the real binary and its install line.
+        conf = json.load(open(os.path.join(R, "src-tauri", "tauri.conf.json")))
+        pk = open(os.path.join(R, "packaging", "arch", "PKGBUILD")).read()
+        names = conf["bundle"]["externalBin"]
+        self.assertEqual(names, ["binaries/arrowbridge-companion"])
+        for n in names:
+            base = os.path.basename(n)
+            self.assertRegex(pk, r'(?m)^\s*install -Dm755 "\$_repo/src-tauri/%s-\$_triple" "\$pkgdir/usr/lib/arrowmem/%s"$' % (re.escape(n), re.escape(base)), n)
+        self.assertNotRegex(pk, r"(?i)arrowmesh")
+        build = open(os.path.join(R, "scripts", "build-clean-pkg.sh")).read()
+        code = "\n".join(l for l in build.splitlines() if not l.lstrip().startswith("#"))
+        self.assertNotIn("arrowmesh", code, "no stand-in stub for a binary the package does not ship")
+        out = self._scan({"usr/bin/arrowmem-desktop": self.CLEAN_BIN, "usr/lib/arrowmem/arrowmesh": b"#!/bin/sh\nexit 1\n"})
+        self.assertIn("LEAK: usr/lib/arrowmem/arrowmesh: an arrowmesh file", out)
 
     def test_packager_line_must_be_the_default(self):
         # F4: makepkg writes the PACKAGER of the builder's makepkg.conf into .BUILDINFO; the clean build leaves the default.
