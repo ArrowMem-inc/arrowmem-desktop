@@ -20,6 +20,9 @@ pub const FOLLOW_POLL_SECS: u64 = 3;
 pub const DEFER_CAP_SECS: u64 = 60;
 /// After a failed unit write or restart the same target is not retried for this long (no hammering every poll).
 const RETRY_AFTER_FAIL_SECS: u64 = 30;
+/// Rebind rate cap (review C1): at most this many rebinds inside REBIND_WINDOW_SECS.
+pub const REBIND_CAP: usize = 4;
+pub const REBIND_WINDOW_SECS: u64 = 300;
 
 /// (address, netmask) of the interface the companion binds.
 pub type Lan = (Ipv4Addr, Ipv4Addr);
@@ -63,6 +66,8 @@ pub enum Step {
     NoAddress,
     /// The pick changed but a pairing window is open: nothing written yet.
     Deferred,
+    /// The rebind rate cap was reached: nothing written, nothing restarted, the bridge keeps its binding.
+    Capped,
     Followed { to: Lan, forced: bool, firewall: FwStep },
     Failed(String),
 }
@@ -100,6 +105,8 @@ pub struct Follower {
     failed: Option<(Lan, u64)>,
     /// Networks whose allow is still in ufw although the bridge left them (a withdrawal not yet asked or refused). Shared with the window through Info.
     pub stale: Vec<String>,
+    /// When each recent rebind was attempted (poll seconds), for the rate cap.
+    rebinds: Vec<u64>,
 }
 
 fn ok_outcome(r: &Result<FwOutcome, String>) -> bool {
@@ -130,6 +137,14 @@ impl Follower {
             }
             forced = true;
         }
+        // Review C1: a local process flapping an interface must not restart the bridge forever (pair code churn). At most REBIND_CAP rebinds per
+        // REBIND_WINDOW_SECS; past that the target backs off like a failed restart and the bridge stays bound to what it had.
+        self.rebinds.retain(|t| now.saturating_sub(*t) < REBIND_WINDOW_SECS);
+        if self.rebinds.len() >= REBIND_CAP {
+            self.failed = Some((to, now + RETRY_AFTER_FAIL_SECS));
+            return Step::Capped;
+        }
+        self.rebinds.push(now);
         let from = self.bound;
         if let Err(e) = self.rebind(to, ctx) {
             self.failed = Some((to, now + RETRY_AFTER_FAIL_SECS));
@@ -162,8 +177,11 @@ impl Follower {
                 // The unit was removed while there was no address (linuxrun::sync): it comes back enabled.
                 userunit::ctl(ctx.ctl, &["enable", BRIDGE_UNIT])?;
             }
-            // A tripped start limit leaves the unit failed until reset-failed, so it comes first.
-            let _ = userunit::ctl(ctx.ctl, &["reset-failed", BRIDGE_UNIT]);
+            // A tripped start limit leaves the unit failed until reset-failed, so it comes first, but only for a unit that reads failed:
+            // reset-failed on a healthy unit would lift systemd's own brake for nothing (review C1). is-failed exits 0 only when it is failed.
+            if userunit::ctl(ctx.ctl, &["is-failed", BRIDGE_UNIT]).is_ok() {
+                let _ = userunit::ctl(ctx.ctl, &["reset-failed", BRIDGE_UNIT]);
+            }
             userunit::ctl(ctx.ctl, &["restart", BRIDGE_UNIT])?;
         }
         Ok(())
@@ -227,7 +245,7 @@ mod tests {
     fn fake_ctl(d: &Path) -> PathBuf {
         let p = d.join("fakectl");
         let dd = d.display();
-        std::fs::write(&p, format!("#!/bin/sh\n[ \"$1\" = __probe ] && exit 0\necho \"$@\" >> {dd}/calls.log\nif [ \"$2\" = restart ] && [ -f {dd}/fail_restart ]; then exit 1; fi\nexit 0\n")).unwrap();
+        std::fs::write(&p, format!("#!/bin/sh\n[ \"$1\" = __probe ] && exit 0\necho \"$@\" >> {dd}/calls.log\nif [ \"$2\" = restart ] && [ -f {dd}/fail_restart ]; then exit 1; fi\nif [ \"$2\" = is-failed ] && [ -f {dd}/not_failed ]; then exit 1; fi\nexit 0\n")).unwrap();
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
         exec_ready(&p);
         p
@@ -301,7 +319,7 @@ mod tests {
         assert_eq!(unit_text(&r.d), old.replace("192.168.1.7", "10.42.0.1"));
         assert!(unit_text(&r.d).contains("\nEnvironment=ARROWBRIDGE_BIND=10.42.0.1\n"));
         assert!(!unit_text(&r.d).contains("192.168.1.7"));
-        assert_eq!(calls(&r.d), vec!["--user daemon-reload".to_string(), format!("--user reset-failed {U}"), format!("--user restart {U}")]);
+        assert_eq!(calls(&r.d), vec!["--user daemon-reload".to_string(), format!("--user is-failed {U}"), format!("--user reset-failed {U}"), format!("--user restart {U}")]);
         assert_eq!(*r.bound.borrow(), vec![lan("10.42.0.1")]);
         assert_eq!(r.fw(), vec!["allow 10.42.0.0/24", "remove 192.168.1.0/24"]);
         assert_eq!(f.bound, Some(lan("10.42.0.1")));
@@ -365,6 +383,43 @@ mod tests {
         assert_eq!(followed, 4);
         assert_eq!(calls(&r.d).iter().filter(|l| l.contains("restart")).count(), 4);
         assert_eq!(unit_text(&r.d).matches("ARROWBRIDGE_BIND=192.168.1.7\n").count(), 1);
+    }
+
+    /// Review C1: a local process flapping an interface every 3 s must not restart the bridge forever, and the start-limit brake (reset-failed) is
+    /// lifted only for a unit that is actually failed.
+    #[test]
+    fn a_flapping_interface_is_capped_at_four_restarts_per_five_minutes_and_a_later_change_still_follows() {
+        let r = Rig::new("cap");
+        let mut f = at("192.168.1.7");
+        let mut restarts_at = vec![];
+        for i in 0..40u64 {
+            let (net, def) = if i % 2 == 0 { (hotspot_net(), "wlan0") } else { (lan_net(), "enp3s0") };
+            r.tick(&mut f, &net, Some(def), i * 3);
+            restarts_at.push(calls(&r.d).iter().filter(|l| l.contains("restart")).count());
+        }
+        // 40 flips in 117 s: never more than 4 restarts, and the cap is reached (not zero, so the follow still works)
+        assert_eq!(*restarts_at.last().unwrap(), 4, "{restarts_at:?}");
+        // the cap window passes: a real change follows again
+        let before = calls(&r.d).iter().filter(|l| l.contains("restart")).count();
+        let s = r.tick(&mut f, &with(vec![ifc("wlp2s0", "172.16.5.9")]), Some("wlp2s0"), 120 + 301);
+        assert!(matches!(s, Step::Followed { .. }), "{s:?}");
+        assert_eq!(calls(&r.d).iter().filter(|l| l.contains("restart")).count(), before + 1);
+    }
+
+    #[test]
+    fn reset_failed_runs_only_when_the_unit_reads_failed() {
+        let r = Rig::new("isfailed");
+        let mut f = at("192.168.1.7");
+        std::fs::write(r.d.join("not_failed"), "").unwrap();
+        r.tick(&mut f, &hotspot_net(), Some("wlan0"), 0);
+        let c = calls(&r.d);
+        assert!(c.contains(&format!("--user is-failed {U}")) && c.iter().any(|l| l.contains("restart")), "{c:?}");
+        assert!(!c.iter().any(|l| l.contains("reset-failed")), "reset the start-limit brake of a unit that was not failed: {c:?}");
+        std::fs::remove_file(r.d.join("not_failed")).unwrap();
+        r.tick(&mut f, &lan_net(), Some("enp3s0"), 3);
+        let c = calls(&r.d);
+        let (q, rf, rs) = (c.iter().rposition(|l| l.contains("is-failed")).unwrap(), c.iter().rposition(|l| l.contains("reset-failed")).unwrap(), c.iter().rposition(|l| l.contains("restart")).unwrap());
+        assert!(q < rf && rf < rs, "{c:?}");
     }
 
     #[test]
@@ -444,7 +499,7 @@ mod tests {
         let r = Rig::new("first");
         let mut f = Follower::default();
         let s0 = r.tick(&mut f, &hotspot_net(), Some("wlan0"), 0); assert!(matches!(s0, Step::Followed { firewall: FwStep::Done, .. }), "{s0:?}");
-        assert_eq!(calls(&r.d), vec!["--user daemon-reload".to_string(), format!("--user enable {U}"), format!("--user reset-failed {U}"), format!("--user restart {U}")]);
+        assert_eq!(calls(&r.d), vec!["--user daemon-reload".to_string(), format!("--user enable {U}"), format!("--user is-failed {U}"), format!("--user reset-failed {U}"), format!("--user restart {U}")]);
         assert_eq!(r.fw(), vec!["allow 10.42.0.0/24"], "nothing to withdraw on the first network");
     }
 
