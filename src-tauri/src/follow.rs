@@ -741,9 +741,11 @@ mod tests {
         // a stale entry alone also needs the button, with or without the flag
         assert!(firewall::button_needed(false, &["10.42.0.0/24".to_string()]));
         assert!(!firewall::button_needed(false, &[]));
-        // the key exists in both languages, as an uncleared placeholder
+        // the key holds cleared words in both languages, each naming its own button
         let (t, _) = crate::pairing::status_texts(None);
-        assert!(t.en.fw_waiting_after_move.contains("UNCLEARED PLACEHOLDER") && t.fr.fw_waiting_after_move.contains("UNCLEARED PLACEHOLDER"));
+        assert!(!t.en.fw_waiting_after_move.contains("UNCLEARED PLACEHOLDER") && !t.fr.fw_waiting_after_move.contains("UNCLEARED PLACEHOLDER"));
+        assert!(t.en.fw_waiting_after_move.contains(&t.en.retry_firewall));
+        assert!(t.fr.fw_waiting_after_move.contains(&t.fr.retry_firewall));
     }
 
     #[test]
