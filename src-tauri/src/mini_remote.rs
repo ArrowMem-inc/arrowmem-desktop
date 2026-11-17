@@ -19,13 +19,33 @@ pub trait RemoteListing {
     fn remote_listing(&self) -> Option<String>;
 }
 
+/// The shortest time between two session opens on the remote machine. Its companion counts every open, good or bad, at 10 per
+/// minute per source address and answers 401 past that; 15 s keeps this at 4 a minute, well under the budget. The owner routes
+/// admit a models call every 2 s, so the answer of the last open (a listing or None) is reused inside this interval.
+pub const MIN_OPEN_GAP: std::time::Duration = std::time::Duration::from_secs(15);
+
 pub struct MiniRemote {
     state_dir: PathBuf,
+    last: std::sync::Mutex<Option<(std::time::Instant, Option<String>)>>,
 }
 
 impl MiniRemote {
     pub fn new(state_dir: PathBuf) -> MiniRemote {
-        MiniRemote { state_dir }
+        MiniRemote { state_dir, last: std::sync::Mutex::new(None) }
+    }
+
+    /// `open` runs only when the last open is at least MIN_OPEN_GAP old. The lock is held across it, so a burst of callers
+    /// makes one open. An answer is never served past the interval: the next call opens again and replaces it, a failure included.
+    fn bounded(&self, now: std::time::Instant, open: impl FnOnce() -> Option<String>) -> Option<String> {
+        let mut g = self.last.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((t, body)) = g.as_ref() {
+            if now.saturating_duration_since(*t) < MIN_OPEN_GAP {
+                return body.clone();
+            }
+        }
+        let body = open();
+        *g = Some((now, body.clone()));
+        body
     }
 
     /// The listing through any transport (the production one is `TcpTransport::dial` on the pinned address).
@@ -37,9 +57,11 @@ impl MiniRemote {
 
 impl RemoteListing for MiniRemote {
     fn remote_listing(&self) -> Option<String> {
-        let pin = minicred::load(&self.state_dir)?;
-        let t = TcpTransport::dial(&pin.host, pin.port).ok()?;
-        self.listing_via(&t, pin.credential(), &pin)
+        self.bounded(std::time::Instant::now(), || {
+            let pin = minicred::load(&self.state_dir)?;
+            let t = TcpTransport::dial(&pin.host, pin.port).ok()?;
+            self.listing_via(&t, pin.credential(), &pin)
+        })
     }
 }
 
@@ -134,6 +156,44 @@ mod tests {
         }
         // the wrong credential on the remote side: the proof does not verify
         assert_eq!(r.listing_via(&fake(Some(MID), 200, LIST), b"pc_aDifferentCredential_0123456789abcd", &pin), None);
+    }
+
+    /// C1: the opened body goes through the owner routes' own parse_remote, as `Owner::listing` does.
+    fn rows(r: &MiniRemote, pin: &minicred::Pin, f: &Fake) -> Option<Result<usize, ()>> {
+        r.listing_via(f, CRED, pin).as_deref().map(|b| crate::ownerroutes::parse_remote(b).map(|v| v.len()).map_err(|_| ()))
+    }
+
+    #[test]
+    fn an_opened_body_replays_through_parse_remote_and_empty_or_failed_reads_unknown() {
+        let (r, pin) = paired("replay", &MID);
+        assert_eq!(rows(&r, &pin, &fake(Some(MID), 200, LIST)), Some(Ok(1)));
+        let two = r#"{"models":[{"id":"a","label":"A"},{"id":"b","label":null,"loaded":false}]}"#;
+        assert_eq!(rows(&r, &pin, &fake(Some(MID), 200, two)), Some(Ok(2)));
+        // an opened empty plaintext, an opened empty list and a non-200 never reach the parser: unknown
+        for (st, body) in [(200u16, ""), (200, r#"{"models":[]}"#), (429, LIST)] {
+            assert_eq!(rows(&r, &pin, &fake(Some(MID), st, body)), None, "{st} {body:?}");
+        }
+        // and the parser alone refuses the empty body and the empty list
+        assert!(crate::ownerroutes::parse_remote("").is_err() && crate::ownerroutes::parse_remote(r#"{"models":[]}"#).is_err());
+    }
+
+    #[test]
+    fn thirty_calls_in_a_minute_open_at_most_four_sessions_and_a_stale_answer_is_never_served() {
+        let (r, pin) = paired("budget", &MID);
+        let f = fake(Some(MID), 200, LIST);
+        let t0 = std::time::Instant::now();
+        let mut got = Vec::new();
+        for i in 0..30u64 {
+            got.push(r.bounded(t0 + std::time::Duration::from_secs(i * 2), || r.listing_via(&f, CRED, &pin)));
+        }
+        let opens = f.calls.lock().unwrap().iter().filter(|c| *c == "session-open").count();
+        assert!(opens <= 4, "{opens} session opens in one simulated minute (the budget is 10)");
+        assert!(got.iter().all(|g| g.as_deref() == Some(LIST)));
+        // past the interval the next call opens again; a failing remote then reads unknown, not the old body
+        let down = fake(Some(MID), 503, LIST);
+        let later = t0 + std::time::Duration::from_secs(60 + 16);
+        assert_eq!(r.bounded(later, || r.listing_via(&down, CRED, &pin)), None);
+        assert_eq!(*down.calls.lock().unwrap(), ["session-open", "chat"]);
     }
 
     #[test]

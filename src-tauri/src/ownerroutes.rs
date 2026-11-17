@@ -182,11 +182,26 @@ pub fn http_call(port: u16, method: &str, path: &str, extra: &str, body: &str, d
 }
 
 /// The desktop's own sources. The router needs the llama key (read per call, sent only in that one request).
-/// There is no remote source in this process (no sealed channel is held here) and the coder pause service is not
-/// built (picker.rs: "a separate service, not built here"): both answer None, which every route reads as unknown.
+/// The remote group is the sealed channel to the paired remote machine (mini_remote; unix only, elsewhere unknown). The coder
+/// pause service is not built (picker.rs: "a separate service, not built here"): it answers None, which every route reads as unknown.
 pub struct DesktopUpstream {
     pub llama_port: u16,
     pub key: Box<dyn Fn() -> Option<String> + Send + Sync>,
+    #[cfg(unix)]
+    remote: crate::mini_remote::MiniRemote,
+}
+impl DesktopUpstream {
+    /// `state_dir` holds the pairing file of the remote machine.
+    pub fn new(llama_port: u16, key: Box<dyn Fn() -> Option<String> + Send + Sync>, state_dir: std::path::PathBuf) -> Self {
+        #[cfg(not(unix))]
+        let _ = state_dir;
+        DesktopUpstream {
+            llama_port,
+            key,
+            #[cfg(unix)]
+            remote: crate::mini_remote::MiniRemote::new(state_dir),
+        }
+    }
 }
 impl Upstream for DesktopUpstream {
     fn local_listing(&self) -> Option<String> {
@@ -198,6 +213,9 @@ impl Upstream for DesktopUpstream {
         http_call(self.llama_port, "GET", "/v1/models", &auth, "", UPSTREAM_DEADLINE)
     }
     fn remote_listing(&self) -> Option<String> {
+        #[cfg(unix)]
+        return crate::mini_remote::RemoteListing::remote_listing(&self.remote);
+        #[cfg(not(unix))]
         None
     }
     fn coder(&self, _body: &str) -> Option<String> {
@@ -226,6 +244,7 @@ pub struct Owner<U: Upstream> {
     up: U,
     port: u16,
     gate: Mutex<Gate>,
+    auto_resume: Duration,
 }
 
 type Reply = (u16, String);
@@ -242,7 +261,7 @@ fn state_reply(s: Option<State>) -> Reply {
 
 impl<U: Upstream> Owner<U> {
     pub fn new(up: U, port: u16) -> Self {
-        Owner { up, port, gate: Mutex::new(Gate::default()) }
+        Owner { up, port, gate: Mutex::new(Gate::default()), auto_resume: AUTO_RESUME }
     }
 
     /// A group that cannot be read is named in `unknown` and contributes no rows (never a guess, never kept stale).
@@ -352,7 +371,7 @@ impl<U: Upstream> Owner<U> {
         let mut g = self.gate.lock().unwrap();
         match reply {
             Some(State::Paused) => {
-                g.paused_until = Some(now + AUTO_RESUME);
+                g.paused_until = Some(now + self.auto_resume);
                 g.paused_model = Some(model);
                 g.retry_at = None;
             }
@@ -463,16 +482,29 @@ impl Running {
 }
 
 /// Binds 127.0.0.1:`port` (0 for any free port) and serves on a thread of its own. At most MAX_CONNS requests at once; the rest are dropped.
+/// The auto resume runs on a thread of its own: a hung coder holds that thread, never an accept.
 pub fn start<U: Upstream + 'static>(port: u16, up: U) -> std::io::Result<Running> {
+    start_with(port, up, AUTO_RESUME)
+}
+
+fn start_with<U: Upstream + 'static>(port: u16, up: U, auto_resume: Duration) -> std::io::Result<Running> {
     let l = TcpListener::bind((Ipv4Addr::LOCALHOST, port))?;
     l.set_nonblocking(true)?;
     let addr = l.local_addr()?;
-    let o = Arc::new(Owner::new(up, addr.port()));
+    let mut owner = Owner::new(up, addr.port());
+    owner.auto_resume = auto_resume;
+    let o = Arc::new(owner);
     let stop = Arc::new(AtomicBool::new(false));
     let (stop2, live) = (stop.clone(), Arc::new(AtomicUsize::new(0)));
+    let (o2, stop3) = (o.clone(), stop.clone());
+    std::thread::spawn(move || {
+        while !stop3.load(Ordering::SeqCst) {
+            o2.tick(Instant::now());
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    });
     std::thread::spawn(move || {
         while !stop2.load(Ordering::SeqCst) {
-            o.tick(Instant::now());
             match l.accept() {
                 Ok((s, _)) => {
                     if live.fetch_add(1, Ordering::SeqCst) >= MAX_CONNS {
@@ -626,19 +658,24 @@ mod tests {
         assert!(r.1.starts_with('{'), "JSON body, served as application/json");
     }
 
+    /// A state dir with no pairing file: the remote group reads unknown.
+    fn unpaired() -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("owner-unpaired-{}", std::process::id()))
+    }
+
     // ---- the llama key ----
     #[test]
     fn the_llama_key_reaches_the_router_in_one_header_and_no_reply_carries_it() {
         let (port, rx) = serve_with(200, ROUTER);
-        let up = DesktopUpstream { llama_port: port, key: Box::new(|| Some(KEY.to_string())) };
+        let up = DesktopUpstream::new(port, Box::new(|| Some(KEY.to_string())), unpaired());
         let body = up.local_listing().unwrap();
         let head = rx.recv().unwrap();
         assert!(head.contains(&format!("Authorization: Bearer {KEY}\r\n")), "{head}");
-        let o = Owner::new(DesktopUpstream { llama_port: port, key: Box::new(|| Some(KEY.to_string())) }, P);
+        let o = Owner::new(DesktopUpstream::new(port, Box::new(|| Some(KEY.to_string())), unpaired()), P);
         let r = o.handle(&get("/v1/models", ""), b"", t0());
         assert!(!r.1.contains(KEY) && !body.contains(KEY));
         // a key that could split the header is not sent at all
-        let bad = DesktopUpstream { llama_port: port, key: Box::new(|| Some("k\r\nX: y".into())) };
+        let bad = DesktopUpstream::new(port, Box::new(|| Some("k\r\nX: y".into())), unpaired());
         assert!(bad.local_listing().is_none());
     }
 
@@ -985,6 +1022,42 @@ mod tests {
         assert!(t.elapsed() < Duration::from_secs(3), "{:?}", t.elapsed());
         let r = raw(run.addr, &format!("POST /v1/pause HTTP/1.1\r\nHost: evil.example:{port}\r\nOrigin: https://evil.example\r\nContent-Length: 0\r\n\r\n"));
         assert!(r.starts_with("HTTP/1.1 403 ") && !r.to_lowercase().contains("access-control"), "{r}");
+        run.stop();
+    }
+    /// The coder answers the pause at once and then hangs on every later call (the due resume).
+    struct HangsAfterPause(Mutex<bool>);
+    impl Upstream for HangsAfterPause {
+        fn local_listing(&self) -> Option<String> {
+            Some(ROUTER.into())
+        }
+        fn remote_listing(&self) -> Option<String> {
+            None
+        }
+        fn coder(&self, _b: &str) -> Option<String> {
+            let mut paused = self.0.lock().unwrap();
+            if !*paused {
+                *paused = true;
+                return Some(r#"{"state":"paused"}"#.into());
+            }
+            drop(paused);
+            std::thread::sleep(Duration::from_secs(5));
+            None
+        }
+    }
+    #[test]
+    fn a_hung_coder_on_a_due_resume_does_not_hold_up_a_get() {
+        let run = start_with(0, HangsAfterPause(Mutex::new(false)), Duration::from_millis(50)).unwrap();
+        let port = run.addr.port();
+        let id = serde_json::from_str::<Value>(ROUTER).unwrap()["data"][0]["id"].as_str().unwrap().to_string();
+        let body = format!(r#"{{"model":"{id}"}}"#);
+        let r = raw(run.addr, &format!("POST /v1/pause HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nX-ArrowBridge-Owner: 1\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}", body.len()));
+        assert!(r.contains(r#"{"state":"paused"}"#), "the pause was accepted: {r}");
+        // The resume is now due and the tick thread is inside the hung coder call.
+        std::thread::sleep(Duration::from_millis(400));
+        let t = Instant::now();
+        let r = raw(run.addr, &format!("GET /v1/models HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nX-ArrowBridge-Owner: 1\r\n\r\n"));
+        assert!(r.starts_with("HTTP/1.1 200 OK\r\n"), "{r}");
+        assert!(t.elapsed() < Duration::from_secs(1), "{:?}", t.elapsed());
         run.stop();
     }
     #[test]

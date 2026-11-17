@@ -475,9 +475,13 @@ fn open_pairing() -> Result<(), String> {
 
 /// llama-server's API key, read from its 0600 file in the state dir. None when absent or not safely stored.
 fn llama_key() -> Option<String> {
+    apikey::read_key(&state_dir_now()?)
+}
+
+/// The state dir from the environment (the llama key and the remote pairing file live in it).
+fn state_dir_now() -> Option<std::path::PathBuf> {
     let home = std::env::var("HOME").ok()?;
-    let dir = uninstall::state_dir(std::env::var("ARROWBRIDGE_STATE_DIR").ok().as_deref(), std::env::var("XDG_STATE_HOME").ok().as_deref(), &home);
-    apikey::read_key(&dir)
+    Some(uninstall::state_dir(std::env::var("ARROWBRIDGE_STATE_DIR").ok().as_deref(), std::env::var("XDG_STATE_HOME").ok().as_deref(), &home))
 }
 
 #[tauri::command]
@@ -728,7 +732,7 @@ pub fn run() {
             app.manage(Info { lan: Mutex::new(None), data_dir: Mutex::new(None), alias: Mutex::new(None), stale: Mutex::new(Vec::new()), fw_wait: Mutex::new(false), fw_none: Mutex::new(false), model_dir: model_dir.clone(), llama_port, llama_variant: llama_variant.clone(), model_tier: Mutex::new(None), fallback: Mutex::new(None), note: note_status.clone(), heal: Mutex::new(linuxrun::Heal::default()), found: Mutex::new(None), dl: Mutex::new(None), applying: Mutex::new(false), proofs: Arc::new(Mutex::new(models::Proofs::default())) });
             // The owner routes for a bar panel on this computer: loopback only, port from ARROWMEM_OWNER_PORT (default 8789).
             // A bind that fails (port taken) leaves the app as it was; no panel then, nothing else changes.
-            let _ = ownerroutes::start(ownerroutes::owner_port(std::env::var("ARROWMEM_OWNER_PORT").ok().as_deref()), ownerroutes::DesktopUpstream { llama_port, key: Box::new(llama_key) });
+            let _ = ownerroutes::start(ownerroutes::owner_port(std::env::var("ARROWMEM_OWNER_PORT").ok().as_deref()), ownerroutes::DesktopUpstream::new(llama_port, Box::new(llama_key), state_dir_now().unwrap_or_default()));
             // The window asks for Info at once, so it opens only after Info is managed. Started by hand: show the home window; by the autostart entry: the tray only.
             if !started_in_background(&std::env::args().collect::<Vec<_>>()) {
                 open_window(app.handle(), "main", "home.html");
