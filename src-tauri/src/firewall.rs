@@ -102,6 +102,12 @@ pub fn remove_for(pkexec: &Path, helper: &Path, cidr: &str) -> Result<FwOutcome,
     run(pkexec, helper, &["remove", cidr])
 }
 
+/// The status window shows the waiting firewall step while the poll thread left it for the button (`flag`) or a left network's allow is still on
+/// the stale list: both need one press, and neither is announced any other way.
+pub fn button_needed(flag: bool, stale: &[String]) -> bool {
+    flag || !stale.is_empty()
+}
+
 /// Remove exactly the rules the helper tagged.
 pub fn remove(pkexec: &Path, helper: &Path) -> Result<FwOutcome, String> {
     if !helper.exists() {

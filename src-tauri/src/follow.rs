@@ -88,6 +88,16 @@ pub fn defer_remove(_: &str) -> Result<FwOutcome, String> {
     Ok(FwOutcome::Failed(PROMPT_FROM_WINDOW))
 }
 
+/// What a poll step does to the "firewall step is waiting for the button" flag the window shows (review C3): a follow whose firewall step was not
+/// answered raises it, one whose step was answered or not needed lowers it, every other step leaves it. The button lowers it on Done or NoFirewall.
+pub fn waiting_after(step: &Step, was: bool) -> bool {
+    match step {
+        Step::Followed { firewall: FwStep::Waiting(_), .. } | Step::Resumed(FwStep::Waiting(_)) => true,
+        Step::Followed { firewall: FwStep::Done | FwStep::NotNeeded, .. } | Step::Resumed(FwStep::Done | FwStep::NotNeeded) => false,
+        _ => was,
+    }
+}
+
 /// The window's button, after the current network was allowed: withdraw every network left behind (never `current`, the one that is up).
 /// A withdrawal that is not answered stays on the list.
 /// True when nothing is left on the list.
@@ -714,6 +724,36 @@ mod tests {
         assert_eq!(press_button(&mut f.stale, cur, &|_| Ok(FwOutcome::Done), &|c| firewall::remove_for(&pk_on, &helper, c)), Ok(FwOutcome::Done));
         assert!(f.stale.is_empty());
         assert!(std::fs::read_to_string(r.d.join("pk.log")).unwrap().contains("remove 10.42.0.0/24"));
+    }
+
+    /// Review C3: after a move whose firewall step was not answered, the window must show a waiting step. The words are an uncleared placeholder
+    /// (key fw_waiting_after_move); this checks the state that drives it and that both languages carry the key.
+    #[test]
+    fn a_followed_move_with_an_unanswered_firewall_step_raises_the_waiting_state_until_the_button_answers() {
+        let r = Rig::new("c3");
+        let mut f = at("192.168.1.7");
+        let ctx = Ctx { ctl: &r.ctl, dir: &r.dir, companion_bin: Path::new("/opt/am/c"), state_dir: &r.state, llama_port: 41717, upstream_model: "m-1" };
+        let hooks = Hooks { bound: &|_| {}, allow: &defer_allow, remove: &defer_remove, busy: &|| false };
+        let mut flag = false;
+        let s = f.tick(&hotspot_net(), Some("wlan0"), &ctx, &hooks, 0);
+        flag = waiting_after(&s, flag);
+        assert!(flag, "a move left for the button did not raise the waiting state: {s:?}");
+        assert!(firewall::button_needed(flag, &f.stale));
+        // polls that change nothing keep it
+        let s = f.tick(&hotspot_net(), Some("wlan0"), &ctx, &hooks, 3);
+        assert_eq!(s, Step::Unchanged);
+        assert!(waiting_after(&s, flag));
+        assert!(waiting_after(&Step::NoAddress, true) && waiting_after(&Step::Capped, true) && waiting_after(&Step::Deferred, true));
+        assert!(!waiting_after(&Step::Unchanged, false));
+        // a step that was answered (or needed nothing) lowers it
+        assert!(!waiting_after(&Step::Followed { to: lan("10.42.0.1"), forced: false, firewall: FwStep::Done }, true));
+        assert!(!waiting_after(&Step::Followed { to: lan("10.42.0.1"), forced: false, firewall: FwStep::NotNeeded }, true));
+        // a stale entry alone also needs the button, with or without the flag
+        assert!(firewall::button_needed(false, &["10.42.0.0/24".to_string()]));
+        assert!(!firewall::button_needed(false, &[]));
+        // the key exists in both languages, as an uncleared placeholder
+        let (t, _) = crate::pairing::status_texts(None);
+        assert!(t.en.fw_waiting_after_move.contains("UNCLEARED PLACEHOLDER") && t.fr.fw_waiting_after_move.contains("UNCLEARED PLACEHOLDER"));
     }
 
     #[test]
