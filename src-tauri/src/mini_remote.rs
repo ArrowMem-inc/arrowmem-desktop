@@ -24,44 +24,102 @@ pub trait RemoteListing {
 /// admit a models call every 2 s, so the answer of the last open (a listing or None) is reused inside this interval.
 pub const MIN_OPEN_GAP: std::time::Duration = std::time::Duration::from_secs(15);
 
+type Opener = std::sync::Arc<dyn Fn() -> Option<String> + Send + Sync>;
+
+/// The last answer and whether an open is running. The lock is only ever held to read or write these two, never across an open.
+#[derive(Default)]
+struct Cache {
+    last: Option<(std::time::Instant, Option<String>)>,
+    opening: bool,
+}
+
 pub struct MiniRemote {
-    state_dir: PathBuf,
-    last: std::sync::Mutex<Option<(std::time::Instant, Option<String>)>>,
+    opener: Opener,
+    cache: std::sync::Arc<std::sync::Mutex<Cache>>,
 }
 
 impl MiniRemote {
     pub fn new(state_dir: PathBuf) -> MiniRemote {
-        MiniRemote { state_dir, last: std::sync::Mutex::new(None) }
+        MiniRemote::with_opener(Box::new(move || {
+            let pin = minicred::load(&state_dir)?;
+            let t = TcpTransport::dial(&pin.host, pin.port).ok()?;
+            listing_via(&t, pin.credential(), &pin)
+        }))
     }
 
-    /// `open` runs only when the last open is at least MIN_OPEN_GAP old. The lock is held across it, so a burst of callers
-    /// makes one open. An answer is never served past the interval: the next call opens again and replaces it, a failure included.
-    fn bounded(&self, now: std::time::Instant, open: impl FnOnce() -> Option<String>) -> Option<String> {
-        let mut g = self.last.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some((t, body)) = g.as_ref() {
+    /// `opener` is the whole cost: dial, open a session, read the models. Tests pass a fake.
+    pub(crate) fn with_opener(opener: Box<dyn Fn() -> Option<String> + Send + Sync>) -> MiniRemote {
+        MiniRemote { opener: opener.into(), cache: Default::default() }
+    }
+
+    /// R7. `Some(answer)`: serve it (the last open is under MIN_OPEN_GAP old, or an open is running and the answer is unknown).
+    /// `None`: this caller now owns a new open and must call `finish`. An answer is never served past the interval, a failure
+    /// included. No caller waits for an open: a burst makes one, the rest read unknown until it lands.
+    fn begin(&self, now: std::time::Instant) -> Option<Option<String>> {
+        let mut g = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        if g.opening {
+            return Some(None);
+        }
+        if let Some((t, body)) = g.last.as_ref() {
             if now.saturating_duration_since(*t) < MIN_OPEN_GAP {
-                return body.clone();
+                return Some(body.clone());
             }
         }
+        g.opening = true;
+        None
+    }
+
+    fn finish(&self, now: std::time::Instant, body: Option<String>) {
+        finish(&self.cache, now, body);
+    }
+
+    /// The open of this caller runs on a thread of its own; the caller reads unknown at once.
+    fn open_in_background(&self) {
+        let (opener, cache) = (self.opener.clone(), self.cache.clone());
+        std::thread::spawn(move || {
+            let body = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| opener())).unwrap_or(None);
+            finish(&cache, std::time::Instant::now(), body);
+        });
+    }
+
+    /// Test helper: the same rule with the open run inline.
+    #[cfg(test)]
+    fn bounded(&self, now: std::time::Instant, open: impl FnOnce() -> Option<String>) -> Option<String> {
+        if let Some(served) = self.begin(now) {
+            return served;
+        }
         let body = open();
-        *g = Some((now, body.clone()));
+        self.finish(now, body.clone());
         body
     }
 
     /// The listing through any transport (the production one is `TcpTransport::dial` on the pinned address).
+    #[cfg(test)]
     fn listing_via(&self, t: &dyn Transport, cred: &[u8], pin: &minicred::Pin) -> Option<String> {
-        let o = exchange(t, cred, random::<16>()?, br#"{"op":"models"}"#).ok()?;
-        pin.machine_matches(o.machine_id.as_deref()).then(|| models_body(&o)).flatten()
+        listing_via(t, cred, pin)
     }
+}
+
+fn finish(cache: &std::sync::Mutex<Cache>, now: std::time::Instant, body: Option<String>) {
+    let mut g = cache.lock().unwrap_or_else(|e| e.into_inner());
+    g.last = Some((now, body));
+    g.opening = false;
+}
+
+fn listing_via(t: &dyn Transport, cred: &[u8], pin: &minicred::Pin) -> Option<String> {
+    let o = exchange(t, cred, random::<16>()?, br#"{"op":"models"}"#).ok()?;
+    pin.machine_matches(o.machine_id.as_deref()).then(|| models_body(&o)).flatten()
 }
 
 impl RemoteListing for MiniRemote {
     fn remote_listing(&self) -> Option<String> {
-        self.bounded(std::time::Instant::now(), || {
-            let pin = minicred::load(&self.state_dir)?;
-            let t = TcpTransport::dial(&pin.host, pin.port).ok()?;
-            self.listing_via(&t, pin.credential(), &pin)
-        })
+        match self.begin(std::time::Instant::now()) {
+            Some(served) => served,
+            None => {
+                self.open_in_background();
+                None
+            }
+        }
     }
 }
 
@@ -192,6 +250,36 @@ mod tests {
         let later = t0 + std::time::Duration::from_secs(60 + 16);
         assert_eq!(r.bounded(later, || r.listing_via(&down, CRED, &pin)), None);
         assert_eq!(*down.calls.lock().unwrap(), ["session-open", "chat"]);
+    }
+
+    /// R7: a burst makes one open, and no caller waits for it: the callers read unknown at once and the answer lands later.
+    #[test]
+    fn a_burst_makes_one_open_and_no_caller_waits_for_it() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let opens = Arc::new(AtomicUsize::new(0));
+        let o2 = opens.clone();
+        let r = Arc::new(MiniRemote::with_opener(Box::new(move || {
+            o2.fetch_add(1, Ordering::SeqCst);
+            std::thread::sleep(std::time::Duration::from_millis(400));
+            Some(LIST.to_string())
+        })));
+        let calls: Vec<_> = (0..2)
+            .map(|_| {
+                let r = r.clone();
+                std::thread::spawn(move || {
+                    let t = std::time::Instant::now();
+                    (r.remote_listing(), t.elapsed())
+                })
+            })
+            .collect();
+        for c in calls {
+            let (got, took) = c.join().unwrap();
+            assert_eq!(got, None, "an open in flight reads unknown");
+            assert!(took < std::time::Duration::from_millis(200), "a caller waited {took:?} for the open");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(700));
+        assert_eq!(r.remote_listing().as_deref(), Some(LIST), "the finished open is served inside the interval");
+        assert_eq!(opens.load(Ordering::SeqCst), 1, "one open for the whole burst");
     }
 
     #[test]

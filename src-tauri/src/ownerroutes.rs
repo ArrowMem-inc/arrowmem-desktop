@@ -1060,6 +1060,40 @@ mod tests {
         assert!(t.elapsed() < Duration::from_secs(1), "{:?}", t.elapsed());
         run.stop();
     }
+    /// A real MiniRemote whose remote open stalls 10 s; the coder answers at once.
+    struct StalledRemote(crate::mini_remote::MiniRemote);
+    impl Upstream for StalledRemote {
+        fn local_listing(&self) -> Option<String> {
+            Some(ROUTER.into())
+        }
+        fn remote_listing(&self) -> Option<String> {
+            crate::mini_remote::RemoteListing::remote_listing(&self.0)
+        }
+        fn coder(&self, _b: &str) -> Option<String> {
+            Some(r#"{"state":"paused"}"#.into())
+        }
+    }
+    /// R7: a remote that stalls 10 s on the session open holds up no request.
+    #[test]
+    fn a_remote_that_stalls_ten_seconds_on_the_open_holds_up_neither_models_nor_pause() {
+        let stalled = crate::mini_remote::MiniRemote::with_opener(Box::new(|| {
+            std::thread::sleep(Duration::from_secs(10));
+            None
+        }));
+        let run = start(0, StalledRemote(stalled)).unwrap();
+        let port = run.addr.port();
+        let t = Instant::now();
+        let r = raw(run.addr, &format!("GET /v1/models HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nX-ArrowBridge-Owner: 1\r\n\r\n"));
+        assert!(t.elapsed() < Duration::from_secs(1), "models took {:?}", t.elapsed());
+        assert!(r.starts_with("HTTP/1.1 200 OK\r\n") && r.contains(r#""unknown":["remote"]"#) && r.contains("\"host\":\"local\""), "{r}");
+        let id = serde_json::from_str::<Value>(ROUTER).unwrap()["data"][0]["id"].as_str().unwrap().to_string();
+        let body = format!(r#"{{"model":"{id}"}}"#);
+        let t = Instant::now();
+        let r = raw(run.addr, &format!("POST /v1/pause HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nX-ArrowBridge-Owner: 1\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}", body.len()));
+        assert!(t.elapsed() < Duration::from_secs(1), "pause took {:?}", t.elapsed());
+        assert!(r.contains(r#"{"state":"paused"}"#), "{r}");
+        run.stop();
+    }
     #[test]
     fn a_client_that_trickles_or_stalls_is_dropped_at_the_request_deadline() {
         let run = start(0, Hung).unwrap();
