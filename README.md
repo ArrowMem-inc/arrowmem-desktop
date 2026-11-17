@@ -3,6 +3,8 @@
 Tauri v2 app for the ArrowBridge home machine.
 Nothing here runs the real companion or llama-server yet; `src-tauri/binaries/` holds placeholders.
 
+Release 0.1.1 does not include the Arrowmesh daemon; it arrives in a later release.
+
 Build (needs Rust via rustup, Linux needs webkit2gtk-4.1 dev packages):
 
     sh scripts/make-placeholders.sh
