@@ -27,7 +27,7 @@ echo "freeze $(sha256sum "$FREEZE" | cut -d' ' -f1) $(stat -c %s "$FREEZE") byte
 export CARGO_TARGET_DIR="$STAGE/target"
 RUSTFLAGS="--remap-path-prefix=$STAGE/src=/build --remap-path-prefix=$STAGE/target=/target --remap-path-prefix=$HOME/.cargo=/cargo --remap-path-prefix=$HOME/.rustup=/rustup --remap-path-prefix=$HOME=/home"
 export RUSTFLAGS
-( cd "$STAGE/src/src-tauri" && cargo build --release --offline --locked )
+( cd "$STAGE/src/src-tauri" && cargo build --release --offline --locked --features custom-protocol )
 # the package takes the app from src-tauri/target/release; the neutral target folder is linked there
 mkdir -p "$STAGE/src/src-tauri/target"; ln -s "$STAGE/target/release" "$STAGE/src/src-tauri/target/release"
 # 3. makepkg with neutral metadata

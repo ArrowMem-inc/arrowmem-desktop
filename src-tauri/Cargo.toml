@@ -11,6 +11,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[features]
+# The Tauri template feature. Without it tauri-build treats the build as a dev build and the generated context embeds the manifest folder as a string.
+custom-protocol = ["tauri/custom-protocol"]
+
 [dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
 serde = { version = "1", features = ["derive"] }

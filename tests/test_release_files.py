@@ -155,6 +155,17 @@ class Files(unittest.TestCase):
         self.assertIn("exit 1", v)
         self.assertNotRegex(v, r"PORT=(8788|8080|11434)\b")
 
+    def test_release_build_passes_the_custom_protocol_feature(self):
+        # Without the feature the binary is a Tauri dev build and embeds the manifest folder as a literal.
+        cargo = open(os.path.join(R, "src-tauri", "Cargo.toml")).read()
+        self.assertRegex(cargo, r'(?ms)^\[features\]\n(?:#[^\n]*\n)*custom-protocol = \["tauri/custom-protocol"\]$')
+        for rel in (("packaging", "arch", "PKGBUILD"), ("README.md",), ("scripts", "build-clean-pkg.sh")):
+            t = open(os.path.join(R, *rel)).read()
+            self.assertIn("--features custom-protocol", t, "/".join(rel))
+            for line in t.splitlines():
+                if "cargo build --release" in line:
+                    self.assertIn("--features custom-protocol", line, "/".join(rel) + ": " + line.strip())
+
     def test_verify_pkg_reports_different_bytes(self):
         # Runs the comparison half on a fake extracted tree: identical files pass, one changed byte fails.
         import shutil, tempfile
