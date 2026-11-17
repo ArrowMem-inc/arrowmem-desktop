@@ -67,14 +67,39 @@ pub enum Step {
     Failed(String),
 }
 
+/// `Failed` code the poll thread's firewall hooks answer with: the follow never raises an admin prompt itself (brief C: one prompt per new network,
+/// from the window, never silently on join). The window's firewall button (`retry_firewall`) asks, and withdraws the networks left behind.
+pub const PROMPT_FROM_WINDOW: i32 = -3;
+
+/// Poll-thread hook for `Hooks::allow`: no pkexec, the prompt belongs to the window.
+pub fn defer_allow(_: Lan) -> Result<FwOutcome, String> {
+    Ok(FwOutcome::Failed(PROMPT_FROM_WINDOW))
+}
+
+/// Poll-thread hook for `Hooks::remove`: no pkexec, see [`defer_allow`].
+pub fn defer_remove(_: &str) -> Result<FwOutcome, String> {
+    Ok(FwOutcome::Failed(PROMPT_FROM_WINDOW))
+}
+
+/// The window's button, after the current network was allowed: withdraw every network left behind (never `current`, the one that is up).
+/// A withdrawal that is not answered stays on the list.
+pub fn withdraw_stale(stale: &mut Vec<String>, current: Option<&str>, remove: &dyn Fn(&str) -> Result<FwOutcome, String>) {
+    stale.retain(|c| Some(c.as_str()) != current);
+    for c in stale.clone() {
+        if ok_outcome(&remove(&c)) {
+            stale.retain(|s| *s != c);
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct Follower {
     /// What the bridge unit is bound to now. Kept across a None pick, so the old network can still be withdrawn later.
     pub bound: Option<Lan>,
     deferred_since: Option<u64>,
     failed: Option<(Lan, u64)>,
-    /// Networks whose allow is still in ufw although the bridge left them (a withdrawal that was refused).
-    stale: Vec<String>,
+    /// Networks whose allow is still in ufw although the bridge left them (a withdrawal not yet asked or refused). Shared with the window through Info.
+    pub stale: Vec<String>,
 }
 
 fn ok_outcome(r: &Result<FwOutcome, String>) -> bool {
@@ -465,6 +490,49 @@ mod tests {
         assert_eq!(s, Step::Followed { to: lan("192.168.1.50"), forced: false, firewall: FwStep::NotNeeded });
         assert!(r.fw().is_empty());
         assert!(calls(&r.d).iter().any(|l| l.contains("restart")), "a new address in the unit needs the restart");
+    }
+
+    /// A pkexec that records every call. The poll thread's hooks must never reach it.
+    fn recording_pkexec(d: &Path) -> PathBuf {
+        let pk = d.join("pkexec");
+        std::fs::write(&pk, format!("#!/bin/sh\n[ \"$1\" = __probe ] && exit 0\necho \"$@\" >> {}/pk.log\nexit 0\n", d.display())).unwrap();
+        std::fs::set_permissions(&pk, std::fs::Permissions::from_mode(0o755)).unwrap();
+        exec_ready(&pk);
+        pk
+    }
+    fn helper_path() -> PathBuf { Path::new(env!("CARGO_MANIFEST_DIR")).join("../scripts/arrowbridge-fw") }
+
+    #[test]
+    fn the_poll_thread_never_prompts_and_the_window_button_allows_then_withdraws_the_old_networks() {
+        let r = Rig::new("noprompt");
+        let pk = recording_pkexec(&r.d);
+        let helper = helper_path();
+        let ctx = Ctx { ctl: &r.ctl, dir: &r.dir, companion_bin: Path::new("/opt/am/c"), state_dir: &r.state, llama_port: 41717, upstream_model: "m-1" };
+        let mut f = at("192.168.1.7");
+        // two moves with the poll thread's own hooks: bound each time, closed each time, no pkexec call
+        let hooks = Hooks { bound: &|_| {}, allow: &defer_allow, remove: &defer_remove, busy: &|| false };
+        let s = f.tick(&hotspot_net(), Some("wlan0"), &ctx, &hooks, 0);
+        assert_eq!(s, Step::Followed { to: lan("10.42.0.1"), forced: false, firewall: FwStep::Waiting(format!("allow: Ok(Failed({PROMPT_FROM_WINDOW}))")) });
+        let s = f.tick(&with(vec![ifc("wlp2s0", "172.16.5.9")]), Some("wlp2s0"), &ctx, &hooks, 3);
+        assert!(matches!(s, Step::Followed { firewall: FwStep::Waiting(_), .. }), "{s:?}");
+        assert!(!r.d.join("pk.log").exists(), "the poll thread raised an admin prompt");
+        assert_eq!(f.stale, vec!["192.168.1.0/24".to_string(), "10.42.0.0/24".to_string()]);
+        // the window's button: allow the network that is up, then withdraw the two that were left
+        assert_eq!(firewall::allow_for(&pk, &helper, lan("172.16.5.9")).unwrap(), FwOutcome::Done);
+        let cur = firewall::cidr_from(ip("172.16.5.9"), ip("255.255.255.0")).unwrap();
+        withdraw_stale(&mut f.stale, Some(&cur), &|c| firewall::remove_for(&pk, &helper, c));
+        assert!(f.stale.is_empty());
+        let log: Vec<String> = std::fs::read_to_string(r.d.join("pk.log")).unwrap().lines().map(|l| l.splitn(2, ' ').nth(1).unwrap().to_string()).collect();
+        assert_eq!(log, vec!["allow 172.16.5.0/24", "remove 192.168.1.0/24", "remove 10.42.0.0/24"]);
+    }
+
+    #[test]
+    fn the_button_never_withdraws_the_network_that_is_up_and_keeps_an_unanswered_withdrawal() {
+        let mut stale = vec!["10.42.0.0/24".to_string(), "192.168.1.0/24".to_string()];
+        let asked = RefCell::new(vec![]);
+        withdraw_stale(&mut stale, Some("10.42.0.0/24"), &|c| { asked.borrow_mut().push(c.to_string()); Ok(FwOutcome::Failed(126)) });
+        assert_eq!(*asked.borrow(), vec!["192.168.1.0/24"]);
+        assert_eq!(stale, vec!["192.168.1.0/24"], "a cancelled withdrawal must stay on the list");
     }
 
     #[test]
