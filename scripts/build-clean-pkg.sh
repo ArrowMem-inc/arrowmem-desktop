@@ -27,6 +27,9 @@ FOUND="$(sha256sum "$FREEZE_SRC" | cut -d' ' -f1)"
 [ "$FOUND" = "$PIN" ] || { echo "refusing: companion sha256 $FOUND is not the pin $PIN" >&2; exit 2; }
 FREEZE="$STAGE/src/src-tauri/binaries/arrowbridge-companion-x86_64-unknown-linux-gnu"
 cp -a "$FREEZE_SRC" "$FREEZE"
+# tauri-build requires every externalBin file to exist. Release 0.1.1 ships without the Arrowmesh daemon, so a stub stands in
+# inside the stage only; PKGBUILD installs no arrowmesh file and verify-pkg would not see one.
+printf '#!/bin/sh\nexit 1\n' > "$STAGE/src/src-tauri/binaries/arrowmesh-x86_64-unknown-linux-gnu"; chmod 755 "$STAGE/src/src-tauri/binaries/arrowmesh-x86_64-unknown-linux-gnu"
 echo "freeze $(sha256sum "$FREEZE" | cut -d' ' -f1) $(stat -c %s "$FREEZE") bytes (the pin)"
 # 2. the app, no home path in it
 export CARGO_TARGET_DIR="$STAGE/target"
