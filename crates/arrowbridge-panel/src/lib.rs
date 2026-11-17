@@ -3,7 +3,7 @@
 //!
 //! The listener is not trusted (a process that binds the port first can pose as it). Every reply is held to
 //! the listener's own caps: status 200, body at most 64 KiB, 3 s for the whole call, at most 64 rows per group,
-//! id at most 200 bytes, label at most 200 characters, no control character, no duplicate id, the two host words only.
+//! id at most 200 bytes from the ASCII allow list (letters, digits and . _ : / -), label at most 200 characters with no control or format character, no duplicate id, the two host words only.
 //!
 //!   list   --owner-port N                -> {"groups":[{"host":"local"|"remote","state":"ok"|"unknown","rows":[{"id","loaded","paused"}]}]}
 //!   pause  --owner-port N --model <id>   -> {"state":"paused"|"free"|"unknown"}
@@ -286,7 +286,7 @@ fn frame(buf: &[u8]) -> Option<Option<(usize, Option<usize>)>> {
 // ---------------------------------------------------------------- the listing
 
 /// Code points of categories Cf, Zl, Zp, Co and Cn (Cc is `is_control`). std has no category table, so this is
-/// the Cf, Zl, Zp and Co ranges plus the noncharacters and every plane from 4 up; Model.js `BAD` holds the same list.
+/// the Cf, Zl, Zp and Co ranges plus the noncharacters and every plane from 4 up. Only the label rule uses it; Model.js never reads a label and keeps no copy.
 const BAD: &[(u32, u32)] = &[
     (0xAD, 0xAD), (0x600, 0x605), (0x61C, 0x61C), (0x6DD, 0x6DD), (0x70F, 0x70F), (0x890, 0x891), (0x8E2, 0x8E2),
     (0x180E, 0x180E), (0x200B, 0x200F), (0x2028, 0x202E), (0x2060, 0x2064), (0x2066, 0x206F), (0xE000, 0xF8FF),
