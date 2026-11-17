@@ -188,7 +188,7 @@ class Files(unittest.TestCase):
             clean_bi = b"format = 2\nbuilddir = /tmp/ab-clean/build\nstartdir = /tmp/ab-clean/src/packaging/arch\n"
             def scan():
                 r = subprocess.run(["/bin/sh", "-c", fn + 'leak_scan "$1"', "sh", d], capture_output=True, text=True,
-                                   env={"LEAK_LOGIN": "fakelogin9", "PATH": os.environ["PATH"]})
+                                   env={"LEAK_LOGIN": "fakelogin9", "LEAK_HOST": "FakeHost7", "PATH": os.environ["PATH"]})
                 return r.stdout
             def put(b, bi_text):
                 open(binp, "wb").write(b); open(bi, "wb").write(bi_text)
@@ -203,8 +203,23 @@ class Files(unittest.TestCase):
             put(clean_bin, clean_bi.replace(b"/tmp/ab-clean/build", b"/var/build"))
             self.assertIn("outside /tmp", scan())
             self.assertNotIn("fakelogin9", scan(), "findings never print the matching text")
+            # F1: the host word, in a DIFFERENT case from the scan's word (the real binary differed in case from hostname)
+            put(clean_bin + b"\x00# the fakehost7 finding\x00", clean_bi)
+            out = scan(); self.assertIn("host's name", out); self.assertNotIn("fakehost7", out.lower())
+            put(clean_bin + b"\x00fakehost78\x00", clean_bi)
+            self.assertEqual(scan(), "", "a word match, not a substring")
         finally:
             shutil.rmtree(d)
+
+    def test_no_source_file_names_the_build_host(self):
+        # The word comes from hostname at test time, never written here. The unit template in userunit.rs is compiled into the binary.
+        host = (subprocess.run(["hostname"], capture_output=True, text=True).stdout.strip() or "x" * 40)
+        files = subprocess.run(["git", "-C", R, "ls-files", "-z"], capture_output=True).stdout.split(b"\0")
+        for rel in files:
+            p = os.path.join(R, rel.decode())
+            if not rel or not os.path.isfile(p) or p.endswith((".png", ".svg", ".lock", ".ico", ".icns")):
+                continue
+            self.assertNotIn(host.lower().encode(), open(p, "rb").read().lower(), "the host word is in a tracked file: " + rel.decode())
 
     def test_verify_pkg_reports_different_bytes(self):
         # Runs the comparison half on a fake extracted tree: identical files pass, one changed byte fails.

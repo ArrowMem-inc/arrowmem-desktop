@@ -36,13 +36,18 @@ same() {
 # manifest folder string), on .BUILDINFO builddir or startdir outside /tmp, and on any "installed =" line.
 # Prints one line per finding on stdout; no output means clean.
 leak_scan() {
-  d="$1"; login="${LEAK_LOGIN:-$(id -un)}"; rn=runner
+  d="$1"; login="${LEAK_LOGIN:-$(id -un)}"; host="${LEAK_HOST:-$(hostname 2>/dev/null || uname -n)}"; rn=runner
   find "$d" -type f | sort | while IFS= read -r f; do
     r="${f#"$d"/}"
     n="$(grep -a -o '/home/[A-Za-z0-9._-]*\(/[A-Za-z0-9._-]*\)\?' "$f" | grep -Ev "^/home/\\.cargo(/|\$)|^/home/$rn/work\$" | wc -l)"
     [ "$n" = 0 ] || echo "LEAK: $r: $n /home/ string(s) outside the two neutral shapes"
-    n="$(grep -a -c -w -F -- "$login" "$f" || :)"
+    n="$(grep -a -c -i -w -F -- "$login" "$f" || :)"
     [ "$n" = 0 ] || echo "LEAK: $r: the build user's login as a word on $n line(s)"
+    # an empty word would match every line, so an empty host (no hostname tool) is skipped; a lower or upper case copy still counts (-i)
+    if [ -n "$host" ]; then
+      n="$(grep -a -c -i -w -F -- "$host" "$f" || :)"
+      [ "$n" = 0 ] || echo "LEAK: $r: the build host's name as a word on $n line(s)"
+    fi
     case "$r" in
       usr/bin/arrowmem-desktop)
         n="$(grep -a -c -E '/[A-Za-z0-9._/-]+/src-tauri([^/]|$)' "$f" || :)"

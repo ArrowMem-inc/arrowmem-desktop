@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 /// The old fixed port. Only the default of the tests now: the real port is chosen by [`choose_llama_port`].
 pub const LLAMA_PORT: u16 = 8080;
-/// An unusual fixed first choice and a short range after it (another program, often a dev server, may hold the common ports: his Victus had 8080 taken).
+/// An unusual fixed first choice and a short range after it (another program, often a dev server, may hold the common ports).
 const PORT_FIRST: u16 = 41717;
 const PORT_LAST: u16 = 41747;
 

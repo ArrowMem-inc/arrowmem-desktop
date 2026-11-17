@@ -119,7 +119,7 @@ pub fn render_llama(u: &LlamaUnit) -> Result<String, String> {
 "[Unit]
 Description=ArrowMem local model (llama-server, loopback only)
 # No model file yet (the download is not done, was refused, or this computer is too small): systemd skips the start quietly, inactive and not failed, so no restart loop
-# and no start limit (the Victus finding). The app starts the unit when the verified file is there.
+# and no start limit. The app starts the unit when the verified file is there.
 ConditionPathExists={model}
 StartLimitIntervalSec=300
 StartLimitBurst=3
