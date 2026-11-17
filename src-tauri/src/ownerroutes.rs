@@ -391,15 +391,21 @@ impl<U: Upstream> Owner<U> {
 
     /// The auto resume. Called often by the listener loop. A due resume that the coder does not confirm is retried every MIN_GAP.
     pub fn tick(&self, now: Instant) {
-        {
+        // The hold this tick saw due. A pause that lands while the resume is at the coder sets a different `paused_until`.
+        let seen = {
             let g = self.gate.lock().unwrap();
             let due = g.paused_until.is_some_and(|t| now >= t);
             if !due || g.retry_at.is_some_and(|t| now < t) {
                 return;
             }
-        }
+            g.paused_until
+        };
         let ok = self.up.coder(r#"{"action":"resume"}"#).as_deref().map(parse_state).and_then(Result::ok) == Some(State::Free);
         let mut g = self.gate.lock().unwrap();
+        if g.paused_until != seen {
+            // compare and clear: a new pause owns the state now, a later tick lifts it when due
+            return;
+        }
         if ok {
             g.paused_until = None;
             g.retry_at = None;
@@ -857,6 +863,65 @@ mod tests {
         assert_eq!(f.posts.lock().unwrap().last().unwrap(), r#"{"action":"resume"}"#);
         o.tick(now + AUTO_RESUME * 2);
         assert_eq!(f.posts.lock().unwrap().len(), 2, "nothing held, nothing sent");
+    }
+    /// Pauses answer at once. The FIRST resume blocks until the test lets it go; later resumes answer free at once.
+    struct BlockedResume {
+        entered: Mutex<std::sync::mpsc::Sender<()>>,
+        release: Mutex<std::sync::mpsc::Receiver<()>>,
+        resumes: Mutex<usize>,
+    }
+    impl Upstream for Arc<BlockedResume> {
+        fn local_listing(&self) -> Option<String> {
+            Some(ROUTER.into())
+        }
+        fn remote_listing(&self) -> Option<String> {
+            None
+        }
+        fn coder(&self, body: &str) -> Option<String> {
+            if body.contains("pause") {
+                return Some(r#"{"state":"paused"}"#.into());
+            }
+            let first = {
+                let mut n = self.resumes.lock().unwrap();
+                *n += 1;
+                *n == 1
+            };
+            if first {
+                self.entered.lock().unwrap().send(()).unwrap();
+                self.release.lock().unwrap().recv().unwrap();
+            }
+            Some(r#"{"state":"free"}"#.into())
+        }
+    }
+    /// F3: a pause that lands while the tick's resume is in flight is a new hold; the tick clears only the hold it saw due.
+    #[test]
+    fn a_pause_that_lands_during_a_due_resume_is_not_cleared_by_that_tick_and_a_later_tick_lifts_it() {
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let f = Arc::new(BlockedResume { entered: Mutex::new(entered_tx), release: Mutex::new(release_rx), resumes: Mutex::new(0) });
+        let o = Arc::new(Owner::new(f.clone(), P));
+        let id = serde_json::from_str::<Value>(ROUTER).unwrap()["data"][0]["id"].as_str().unwrap().to_string();
+        let body = format!(r#"{{"model":"{id}"}}"#);
+        let now = t0();
+        let (h, b) = post("/v1/pause", &body, "");
+        assert_eq!(o.handle(&h, &b, now).0, 200);
+        let due = now + AUTO_RESUME;
+        let o2 = o.clone();
+        let ticker = std::thread::spawn(move || o2.tick(due));
+        entered_rx.recv_timeout(Duration::from_secs(5)).expect("the tick never reached the coder");
+        // the second pause lands now, while the first hold's resume is still at the coder
+        let later = due + Duration::from_secs(5);
+        let (h, b) = post("/v1/pause", &body, "");
+        assert_eq!(o.handle(&h, &b, later).0, 200);
+        release_tx.send(()).unwrap();
+        ticker.join().unwrap();
+        assert!(o.is_held(), "the tick cleared a pause that landed after it saw the old one due");
+        // that hold is lifted by a later tick, once it is due
+        o.tick(later + AUTO_RESUME - Duration::from_secs(1));
+        assert!(o.is_held(), "lifted early");
+        o.tick(later + AUTO_RESUME);
+        assert!(!o.is_held());
+        assert_eq!(*f.resumes.lock().unwrap(), 2);
     }
     #[test]
     fn a_resume_the_coder_does_not_confirm_is_retried_every_two_seconds_until_it_is() {
