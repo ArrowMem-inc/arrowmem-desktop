@@ -12,6 +12,8 @@ pub mod userunit;
 #[cfg(unix)]
 pub mod linuxrun;
 #[cfg(unix)]
+pub mod follow;
+#[cfg(unix)]
 pub mod firewall;
 #[cfg(unix)]
 pub mod apikey;
@@ -154,6 +156,7 @@ fn linux_sync(l: &LlamaLauncher, app: &tauri::AppHandle, data_dir: &std::path::P
     let lan = linuxrun::pick_lan(&ifaces, default_if.as_deref()).map(|i| (i.ip, i.mask));
     *app.state::<Info>().lan.lock().unwrap() = lan;
     *app.state::<Info>().data_dir.lock().unwrap() = Some(data_dir.to_path_buf());
+    *app.state::<Info>().alias.lock().unwrap() = Some(userunit::model_alias(&l.model));
     *app.state::<Info>().fallback.lock().unwrap() = match (l.variant.as_deref(), &l.cpu_fallback) {
         (Some("vulkan"), Some(cpu)) => Some(linuxrun::Fallback::new(linuxrun::LlamaPlan {
             port: l.port, cpu_bin: cpu.clone(), model: l.model.clone(), idle_seconds: l.idle_seconds, state_dir: state.clone(),
@@ -174,10 +177,64 @@ fn linux_sync(l: &LlamaLauncher, app: &tauri::AppHandle, data_dir: &std::path::P
     }
 }
 
+/// Round 3a: poll the interfaces and move the bridge (unit, restart, firewall) to the private address that is up now. Waits until linux_sync has run once
+/// (it sets the data dir and the unit's model name), so the install, not this loop, owns the first state. Status words are the existing keys only; the
+/// words for a forced restart and for a firewall step that is waiting are not written yet (uncleared).
+#[cfg(target_os = "linux")]
+fn follow_loop(app: tauri::AppHandle) {
+    let (ctl, pkexec, helper) = (std::path::Path::new("/usr/bin/systemctl"), std::path::Path::new("/usr/bin/pkexec"), std::path::Path::new(firewall::HELPER_PATH));
+    let t0 = Instant::now();
+    let mut f = follow::Follower::default();
+    loop {
+        std::thread::sleep(Duration::from_secs(follow::FOLLOW_POLL_SECS));
+        if SIGNALLED.load(std::sync::atomic::Ordering::SeqCst) { return; }
+        let Some(info) = app.try_state::<Info>() else { continue };
+        let (Some(data_dir), Some(alias), Some(home), Some(companion)) =
+            (info.data_dir.lock().unwrap().clone(), info.alias.lock().unwrap().clone(), std::env::var_os("HOME"), locate_companion()) else { continue };
+        // What linux_sync (start, or a model change) bound is the baseline; a None there leaves what this loop last bound.
+        if let Some(l) = *info.lan.lock().unwrap() { f.bound = Some(l); }
+        let home = home.to_string_lossy().into_owned();
+        let dir = userunit::unit_dir(std::env::var("XDG_CONFIG_HOME").ok().as_deref(), &home);
+        let state = uninstall::state_dir(std::env::var("ARROWBRIDGE_STATE_DIR").ok().as_deref(), std::env::var("XDG_STATE_HOME").ok().as_deref(), &home);
+        let ctx = follow::Ctx { ctl, dir: &dir, companion_bin: &companion, state_dir: &state, llama_port: info.llama_port, upstream_model: &alias };
+        let ifaces = linuxrun::list_ipv4();
+        let default_if = linuxrun::default_iface(std::path::Path::new("/proc/net/route"));
+        let (app_b, dd) = (app.clone(), data_dir.clone());
+        // The pair code and QR come from Info.lan on every window poll: setting it here, before the firewall prompt, is what makes them follow on this tick.
+        let bound = |l: follow::Lan| {
+            if let Some(i) = app_b.try_state::<Info>() {
+                *i.lan.lock().unwrap() = Some(l);
+                *i.note.lock().unwrap() = firstrun::status_line("note_services", firstrun::locale_is_fr());
+            }
+        };
+        let allow = |l: follow::Lan| firewall::allow_for(pkexec, helper, l).map(|r| {
+            // The same marker the first install writes: the prompt reached a definite answer.
+            if matches!(r, firewall::FwOutcome::Done | firewall::FwOutcome::NoFirewall) { let _ = std::fs::write(dd.join("first-install-done"), b"1"); }
+            r
+        });
+        let remove = |c: &str| firewall::remove_for(pkexec, helper, c);
+        let busy = || matches!(pairing::fetch_pair_state(pairing::COMPANION_PORT), pairing::PairState::Waiting | pairing::PairState::Revealed { .. } | pairing::PairState::Confirmed);
+        let hooks = follow::Hooks { bound: &bound, allow: &allow, remove: &remove, busy: &busy };
+        match f.tick(&ifaces, default_if.as_deref(), &ctx, &hooks, t0.elapsed().as_secs()) {
+            follow::Step::NoAddress => {
+                let mut g = info.lan.lock().unwrap();
+                if g.take().is_some() {
+                    *info.note.lock().unwrap() = firstrun::status_line("note_services_no_address", firstrun::locale_is_fr());
+                }
+            }
+            follow::Step::Failed(_) => *info.note.lock().unwrap() = firstrun::status_line("note_unavailable", firstrun::locale_is_fr()),
+            _ => {}
+        }
+    }
+}
+
 /// Shared with the windows: the LAN address in use (if any) and the model status note.
 struct Info {
     lan: Mutex<Option<(std::net::Ipv4Addr, std::net::Ipv4Addr)>>,
     data_dir: Mutex<Option<std::path::PathBuf>>,
+    /// The model name the bridge unit carries (set by linux_sync); the follow re-renders the unit with it.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    alias: Mutex<Option<String>>,
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     model_dir: Option<std::path::PathBuf>,
     llama_port: u16,
@@ -626,7 +683,7 @@ pub fn run() {
             // The model server's loopback port: chosen once from an unusual range and kept, never a fixed 8080 that another program may hold.
             #[cfg(target_os = "linux")]
             let llama_port = model_dir.as_ref().map(|d| linuxrun::pick_llama_port(d.parent().unwrap_or(d), std::path::Path::new("/usr/bin/systemctl"))).unwrap_or(linuxrun::LLAMA_PORT);
-            app.manage(Info { lan: Mutex::new(None), data_dir: Mutex::new(None), model_dir: model_dir.clone(), llama_port, llama_variant: llama_variant.clone(), model_tier: Mutex::new(None), fallback: Mutex::new(None), note: note_status.clone(), heal: Mutex::new(linuxrun::Heal::default()), found: Mutex::new(None), dl: Mutex::new(None), applying: Mutex::new(false), proofs: Arc::new(Mutex::new(models::Proofs::default())) });
+            app.manage(Info { lan: Mutex::new(None), data_dir: Mutex::new(None), alias: Mutex::new(None), model_dir: model_dir.clone(), llama_port, llama_variant: llama_variant.clone(), model_tier: Mutex::new(None), fallback: Mutex::new(None), note: note_status.clone(), heal: Mutex::new(linuxrun::Heal::default()), found: Mutex::new(None), dl: Mutex::new(None), applying: Mutex::new(false), proofs: Arc::new(Mutex::new(models::Proofs::default())) });
             // The window asks for Info at once, so it opens only after Info is managed. Started by hand: show the home window; by the autostart entry: the tray only.
             if !started_in_background(&std::env::args().collect::<Vec<_>>()) {
                 open_window(app.handle(), "main", "home.html");
@@ -638,6 +695,8 @@ pub fn run() {
             {
                 let _ = (&model_dir, &key_file, &variant_setup, &note_setup, &handle_info);
                 std::thread::spawn(move || bring_up_model(&handle_model));
+                let handle_follow = app.handle().clone();
+                std::thread::spawn(move || follow_loop(handle_follow));
             }
             #[cfg(not(target_os = "linux"))]
             std::thread::spawn(move || {

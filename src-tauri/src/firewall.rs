@@ -72,6 +72,36 @@ pub fn allow(pkexec: &Path, helper: &Path, cidr: &str) -> Result<FwOutcome, Stri
     run(pkexec, helper, &["allow", cidr])
 }
 
+/// `Failed` code for a helper too old to know `remove <cidr>` (reported, never skipped silently).
+pub const VERSION_REFUSED: i32 = -2;
+
+/// The `HELPER_VERSION=N` line of the installed helper (root-owned, world-readable; reading it costs no prompt). None when absent or unreadable.
+pub fn helper_version(helper: &Path) -> Option<u32> {
+    std::fs::read_to_string(helper).ok()?.lines().find_map(|l| l.strip_prefix("HELPER_VERSION=")?.trim().parse().ok())
+}
+
+/// The follow's allow: this interface's network (address and mask) as one CIDR. A missing helper is `HelperMissing`, no prompt.
+pub fn allow_for(pkexec: &Path, helper: &Path, lan: (Ipv4Addr, Ipv4Addr)) -> Result<FwOutcome, String> {
+    let cidr = cidr_from(lan.0, lan.1)?;
+    if !helper.exists() {
+        return Ok(FwOutcome::HelperMissing);
+    }
+    allow(pkexec, helper, &cidr)
+}
+
+/// The follow's withdrawal: delete only the tagged rules for exactly this network. Needs helper version 2 or later: a v1 helper reads
+/// `remove <cidr>` as bad usage, so it is refused here as `Failed(VERSION_REFUSED)` (the existing Failed state), never skipped silently.
+pub fn remove_for(pkexec: &Path, helper: &Path, cidr: &str) -> Result<FwOutcome, String> {
+    validate_cidr(cidr)?;
+    if !helper.exists() {
+        return Ok(FwOutcome::HelperMissing);
+    }
+    if !helper_version(helper).is_some_and(|v| v >= 2) {
+        return Ok(FwOutcome::Failed(VERSION_REFUSED));
+    }
+    run(pkexec, helper, &["remove", cidr])
+}
+
 /// Remove exactly the rules the helper tagged.
 pub fn remove(pkexec: &Path, helper: &Path) -> Result<FwOutcome, String> {
     if !helper.exists() {
@@ -260,6 +290,115 @@ exit 0
         assert_eq!(c, 0);
         assert!(!log.contains("delete"), "deleted something after the target moved: {log}");
         assert_eq!(rules(&d), vec!["22/tcp|Anywhere|", "443/tcp|Anywhere|"]);
+    }
+
+    #[test]
+    fn remove_cidr_takes_the_same_good_and_bad_vectors() {
+        let d = tmp("rmv");
+        for g in GOOD {
+            fake_ufw(&d, true, &[&format!("8788/tcp|{g}|arrowbridge"), "22/tcp|Anywhere|"]);
+            let _ = std::fs::remove_file(d.join("calls.log"));
+            let (c, log) = sh(&d, &["remove", g]);
+            assert_eq!(c, 0, "{g}");
+            assert_eq!(rules(&d), vec!["22/tcp|Anywhere|"], "{g}");
+            assert_eq!(log.lines().filter(|l| l.contains("delete")).count(), 1, "{log}");
+        }
+        for b in BAD {
+            fake_ufw(&d, true, &["8788/tcp|10.0.0.0/24|arrowbridge"]);
+            let _ = std::fs::remove_file(d.join("calls.log"));
+            let (c, log) = sh(&d, &["remove", b]);
+            assert_eq!(c, 2, "{b}");
+            assert_eq!(log, "", "{b} reached ufw");
+            assert_eq!(rules(&d).len(), 1);
+        }
+    }
+
+    #[test]
+    fn remove_cidr_deletes_exactly_that_network_and_never_a_substring_match() {
+        let d = tmp("rmone");
+        fake_ufw(&d, true, &[
+            "8788/tcp|10.0.0.0/16|arrowbridge", "22/tcp|10.0.0.0/24|", "8788/tcp|10.0.0.0/24|arrowbridge",
+            "8788/tcp|192.168.1.0/24|arrowbridge", "8788/tcp|110.0.0.0/24|arrowbridge", "8788/tcp|10.0.0.0/240|arrowbridge"]);
+        // a tagged 110.0.0.0/24 and a tagged 10.0.0.0/240 both contain the text 10.0.0.0/24: only the exact source goes
+        let (c, _) = sh(&d, &["remove", "10.0.0.0/24"]);
+        assert_eq!(c, 0);
+        assert_eq!(rules(&d), vec!["8788/tcp|10.0.0.0/16|arrowbridge", "22/tcp|10.0.0.0/24|", "8788/tcp|192.168.1.0/24|arrowbridge", "8788/tcp|110.0.0.0/24|arrowbridge", "8788/tcp|10.0.0.0/240|arrowbridge"]);
+        // the other way round: the /16 goes, the /24 of another block stays
+        let (c, _) = sh(&d, &["remove", "10.0.0.0/16"]);
+        assert_eq!(c, 0);
+        assert_eq!(rules(&d), vec!["22/tcp|10.0.0.0/24|", "8788/tcp|192.168.1.0/24|arrowbridge", "8788/tcp|110.0.0.0/24|arrowbridge", "8788/tcp|10.0.0.0/240|arrowbridge"]);
+    }
+
+    #[test]
+    fn remove_cidr_is_idempotent_and_survives_numbering_that_shifts() {
+        let d = tmp("rmidem");
+        fake_ufw(&d, true, &["22/tcp|Anywhere|", "8788/tcp|10.0.0.0/24|arrowbridge", "8788/tcp|192.168.1.0/24|arrowbridge"]);
+        std::fs::write(d.join("shift_at"), "2").unwrap(); // rule 1 vanishes between the number read and its confirm
+        assert_eq!(sh(&d, &["remove", "192.168.1.0/24"]).0, 0);
+        assert_eq!(rules(&d), vec!["8788/tcp|10.0.0.0/24|arrowbridge"]);
+        let _ = std::fs::remove_file(d.join("calls.log"));
+        let (c, log) = sh(&d, &["remove", "192.168.1.0/24"]); // already gone: still 0, nothing deleted
+        assert_eq!(c, 0);
+        assert!(!log.contains("delete"), "{log}");
+        assert_eq!(rules(&d).len(), 1);
+    }
+
+    #[test]
+    fn remove_cidr_with_two_tagged_rules_leaves_the_no_argument_remove_to_take_both() {
+        let d = tmp("rmboth");
+        fake_ufw(&d, true, &["8788/tcp|10.0.0.0/24|arrowbridge", "8788/tcp|192.168.1.0/24|arrowbridge"]);
+        assert_eq!(sh(&d, &["remove", "10.0.0.0/24"]).0, 0);
+        assert_eq!(rules(&d), vec!["8788/tcp|192.168.1.0/24|arrowbridge"]);
+        fake_ufw(&d, true, &["8788/tcp|10.0.0.0/24|arrowbridge", "8788/tcp|192.168.1.0/24|arrowbridge"]);
+        assert_eq!(sh(&d, &["remove"]).0, 0);
+        assert!(rules(&d).is_empty());
+    }
+
+    #[test]
+    fn remove_cidr_on_an_inactive_ufw_exits_3_and_changes_nothing() {
+        let d = tmp("rminact");
+        fake_ufw(&d, false, &["8788/tcp|10.0.0.0/24|arrowbridge"]);
+        let (c, log) = sh(&d, &["remove", "10.0.0.0/24"]);
+        assert_eq!(c, 3);
+        assert!(mutations(&log).is_empty(), "{log}");
+        assert_eq!(rules(&d).len(), 1);
+    }
+
+    #[test]
+    fn remove_for_needs_helper_version_2_and_sends_the_cidr_as_argv() {
+        let d = tmp("rmfor");
+        let pk = fake_pkexec(&d, 0);
+        // the shipped script is version 2 and the app reads that same line
+        assert_eq!(helper_version(&script()), Some(2));
+        assert_eq!(remove_for(&pk, &script(), "192.168.1.0/24").unwrap(), FwOutcome::Done);
+        assert_eq!(std::fs::read_to_string(d.join("pk.log")).unwrap().trim_end().rsplit_once(' ').unwrap().1, "192.168.1.0/24");
+        assert!(std::fs::read_to_string(d.join("pk.log")).unwrap().contains(" remove 192.168.1.0/24"));
+        // a v1 helper, one with no version line, and an unreadable one are all refused before any prompt
+        let before = std::fs::read_to_string(d.join("pk.log")).unwrap();
+        for (i, body) in ["HELPER_VERSION=1\n", "echo hi\n", "HELPER_VERSION=x\n"].iter().enumerate() {
+            let h = d.join(format!("old{i}"));
+            std::fs::write(&h, body).unwrap();
+            assert_eq!(remove_for(&pk, &h, "192.168.1.0/24").unwrap(), FwOutcome::Failed(VERSION_REFUSED), "{body}");
+        }
+        assert_eq!(std::fs::read_to_string(d.join("pk.log")).unwrap(), before, "a refused helper reached pkexec");
+        // a bad CIDR never reaches pkexec; a missing helper is no prompt
+        assert!(remove_for(&pk, &script(), "8.8.8.0/24").is_err());
+        assert!(remove_for(&pk, &script(), "10.0.0.0/24;ls").is_err());
+        assert_eq!(remove_for(&pk, &d.join("absent"), "10.0.0.0/24").unwrap(), FwOutcome::HelperMissing);
+        assert_eq!(std::fs::read_to_string(d.join("pk.log")).unwrap(), before);
+        // helper exit codes map as for allow
+        assert_eq!(remove_for(&fake_pkexec(&d, 3), &script(), "10.0.0.0/24").unwrap(), FwOutcome::NoFirewall);
+        assert_eq!(remove_for(&fake_pkexec(&d, 126), &script(), "10.0.0.0/24").unwrap(), FwOutcome::Failed(126));
+    }
+
+    #[test]
+    fn allow_for_builds_the_cidr_from_the_interface_and_asks_once() {
+        let d = tmp("alfor");
+        let ip = |s: &str| -> Ipv4Addr { s.parse().unwrap() };
+        assert_eq!(allow_for(&fake_pkexec(&d, 0), &script(), (ip("192.168.43.1"), ip("255.255.255.0"))).unwrap(), FwOutcome::Done);
+        assert!(std::fs::read_to_string(d.join("pk.log")).unwrap().ends_with(" allow 192.168.43.0/24\n"));
+        assert!(allow_for(&fake_pkexec(&d, 0), &script(), (ip("8.8.8.8"), ip("255.255.255.0"))).is_err());
+        assert_eq!(allow_for(&fake_pkexec(&d, 0), &d.join("absent"), (ip("10.0.0.5"), ip("255.255.255.0"))).unwrap(), FwOutcome::HelperMissing);
     }
 
     #[test]
