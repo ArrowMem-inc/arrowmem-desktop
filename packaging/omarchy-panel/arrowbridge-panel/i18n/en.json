@@ -1,0 +1,18 @@
+{
+  "paused.note": "The coding job is paused while you chat. It resumes when you are done.",
+  "list.unavailable": "The model list is unavailable. Only the loaded model is shown.",
+  "pick.refused": "The coding job could not be paused, so the model was not changed. Try again.",
+  "host.local": "this machine",
+  "host.remote": "remote",
+  "bar.glyph": "FILL",
+  "bar.tooltip": "ArrowBridge models",
+  "title": "ArrowBridge",
+  "unknown.line": "No answer. The state is unknown.",
+  "empty.line": "No models found.",
+  "action.pause": "Pause",
+  "action.resume": "Resume",
+  "action.refresh": "Refresh",
+  "outcome.paused": "The coding job is paused.",
+  "outcome.free": "The coding job is not paused.",
+  "outcome.unknown": "No answer from ArrowBridge. The state of the coding job is unknown."
+}

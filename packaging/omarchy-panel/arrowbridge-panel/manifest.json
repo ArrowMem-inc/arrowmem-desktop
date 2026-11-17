@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "arrowmem.bridge",
+  "name": "ArrowBridge",
+  "version": "0.1.0",
+  "author": "ArrowMem Inc.",
+  "license": "MIT",
+  "description": "FILL",
+  "kinds": ["bar-widget"],
+  "activation": "on-demand",
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "FILL",
+    "description": "FILL",
+    "category": "AI",
+    "allowMultiple": false,
+    "defaults": {
+      "ownerPort": 8789,
+      "refreshIntervalSec": 5
+    },
+    "schema": [
+      { "key": "ownerPort", "type": "integer", "label": "FILL", "min": 1024, "max": 65535, "step": 1, "defaultValue": 8789 },
+      { "key": "refreshIntervalSec", "type": "integer", "label": "FILL", "min": 3, "max": 60, "step": 1, "defaultValue": 5 }
+    ]
+  }
+}

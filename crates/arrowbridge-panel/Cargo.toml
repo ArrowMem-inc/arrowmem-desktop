@@ -1,0 +1,18 @@
+[package]
+name = "arrowbridge-panel"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Bar panel helper: reads the ArrowBridge owner listener on loopback and prints one validated JSON line."
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "arrowbridge-panel"
+path = "src/main.rs"
+
+[dependencies]
+
+[profile.release]
+panic = "unwind"
