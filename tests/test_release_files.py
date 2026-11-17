@@ -240,6 +240,19 @@ class Files(unittest.TestCase):
         out = self._scan({binp: self.CLEAN_BIN, ".BUILDINFO": self.CLEAN_BI + b"buildenv = /tmp/ab-clean/x\n"})
         self.assertIn("LEAK: .BUILDINFO", out); self.assertIn("stage", out)
 
+    def test_mtree_is_scanned_decompressed(self):
+        # F3: .MTREE is gzip, so a raw grep cannot see a path inside it.
+        import gzip
+        binp = "usr/bin/arrowmem-desktop"
+        ok = gzip.compress(b"#mtree\n./usr/bin/arrowmem-desktop time=1 mode=755\n")
+        self.assertEqual(self._scan({binp: self.CLEAN_BIN, ".MTREE": ok}), "")
+        bad = gzip.compress(b"#mtree\n." + self.H + b"somebody/x time=1\n" + self.H + b"somebody/work\n")
+        out = self._scan({binp: self.CLEAN_BIN, ".MTREE": bad})
+        self.assertIn("LEAK: .MTREE: 2 /home/ string", out)
+        out =self._scan({binp: self.CLEAN_BIN, ".MTREE": gzip.compress(b"fakehost7\n")})
+        self.assertIn("LEAK: .MTREE: the build host", out)
+        self.assertIn("LEAK: .MTREE: 1 /home/ string", self._scan({binp: self.CLEAN_BIN, ".MTREE": self.H + b"somebody/work\n"}), "a plain file still scans")
+
     def test_no_source_file_names_the_build_host(self):
         # The word comes from hostname at test time, never written here. The unit template in userunit.rs is compiled into the binary.
         host = (subprocess.run(["hostname"], capture_output=True, text=True).stdout.strip() or "x" * 40)

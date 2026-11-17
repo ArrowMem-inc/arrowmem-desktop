@@ -38,7 +38,9 @@ same() {
 leak_scan() {
   d="$1"; login="${LEAK_LOGIN:-$(id -un)}"; host="${LEAK_HOST:-$(hostname 2>/dev/null || uname -n)}"; rn=runner
   find "$d" -type f | sort | while IFS= read -r f; do
-    r="${f#"$d"/}"
+    r="${f#"$d"/}"; t=""
+    # .MTREE is gzip: scan what is inside it (a plain file stays as it is), under the package name r.
+    if [ "$r" = .MTREE ]; then t="$(mktemp)"; zcat "$f" > "$t" 2>/dev/null || cp "$f" "$t"; f="$t"; fi
     n="$(grep -a -o '/home/[A-Za-z0-9._-]*\(/[A-Za-z0-9._-]*\)\?' "$f" | grep -Ev "^/home/\\.cargo(/|\$)|^/home/$rn/work\$" | wc -l)"
     [ "$n" = 0 ] || echo "LEAK: $r: $n /home/ string(s) outside the two neutral shapes"
     n="$(grep -a -c -i -w -F -- "$login" "$f" || :)"
@@ -65,6 +67,7 @@ leak_scan() {
         n="$(grep -c '^installed = ' "$f" || :)"
         [ "$n" = 0 ] || echo "LEAK: $r: $n installed = line(s), the build host package list";;
     esac
+    [ -z "$t" ] || rm -f "$t"
   done
 }
 echo "$PIN  pin     reviewed companion freeze"
