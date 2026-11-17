@@ -2,9 +2,10 @@
 # Root helper for the ArrowBridge firewall rule. Installed read-only and owned by root; run via pkexec.
 # Commands, and only these:
 #   allow <cidr>   allow TCP 8788 from one private network (/16 to /30), tagged with the comment "arrowbridge"
-#   remove         delete exactly the rules carrying that comment
+#   remove         delete exactly the rules carrying that comment (uninstall)
+#   remove <cidr>  delete only the tagged rules whose source is exactly that network (the app withdraws a network it left)
 # Exit codes: 0 done, 2 bad usage or bad CIDR, 3 ufw missing or inactive (nothing changed), 4 ufw failed.
-HELPER_VERSION=1
+HELPER_VERSION=2
 set -u
 # Fixed environment: pkexec already scrubs it, this makes it true however the helper is started. A translated
 # "inactive" would break the status parse, so the locale is forced to C.
@@ -49,15 +50,28 @@ case "${1:-}" in
     "$UFW" allow from "$2" to any port "$PORT" proto tcp comment "$TAG" >/dev/null 2>&1 || die 4
     ;;
   remove)
-    [ "$#" -eq 1 ] || die 2
+    [ "$#" -le 2 ] || die 2
+    want=""
+    if [ "$#" -eq 2 ]; then valid_cidr "$2" || die 2; want="$2"; fi
     ufw_active || die 3
     # Every delete uses a number from a listing read just before it, confirmed by a second read: the numbers shift
     # after each delete (and if something else edits the rules), so nothing is remembered between deletes.
-    re='^\[[[:space:]]*([0-9]+)\][[:space:]].*[[:space:]]#[[:space:]]'"$TAG"'[[:space:]]*$'
-    tagged() {  # prints tagged rule numbers, highest first
-      local line
+    re='^\[[[:space:]]*([0-9]+)\][[:space:]](.*)[[:space:]]#[[:space:]]'"$TAG"'[[:space:]]*$'
+    tagged() {  # prints tagged rule numbers, highest first; with a CIDR, only rules whose source equals it exactly
+      local line num body from
       while IFS= read -r line; do
-        if [[ "$line" =~ $re ]]; then echo "${BASH_REMATCH[1]}"; fi
+        if [[ "$line" =~ $re ]]; then
+          num="${BASH_REMATCH[1]}"; body="${BASH_REMATCH[2]}"
+          if [ -n "$want" ]; then
+            # Whole-string compare of the source column (never a substring: 10.0.0.0/16 is not 10.0.0.0/24).
+            [[ "$body" == *"ALLOW IN"* ]] || continue
+            from="${body##*ALLOW IN}"
+            from="${from#"${from%%[![:space:]]*}"}"
+            from="${from%"${from##*[![:space:]]}"}"
+            [ "$from" = "$want" ] || continue
+          fi
+          echo "$num"
+        fi
       done < <("$UFW" status numbered 2>/dev/null) | sort -rn
     }
     for ((guard=0; guard<200; guard++)); do

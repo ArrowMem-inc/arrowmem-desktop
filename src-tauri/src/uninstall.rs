@@ -278,8 +278,10 @@ mod tests {
         d
     }
     fn exe(p: &Path, body: &str) {
-        std::fs::write(p, body).unwrap();
+        // every fake answers `__probe` first, so exec_ready can wait out ETXTBSY (see firewall::exec_ready)
+        std::fs::write(p, body.replacen("#!/bin/sh\n", "#!/bin/sh\n[ \"$1\" = __probe ] && exit 0\n", 1)).unwrap();
         std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        crate::firewall::exec_ready(p);
     }
     struct W { d: PathBuf }
     impl W {

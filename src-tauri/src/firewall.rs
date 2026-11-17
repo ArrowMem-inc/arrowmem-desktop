@@ -72,12 +72,63 @@ pub fn allow(pkexec: &Path, helper: &Path, cidr: &str) -> Result<FwOutcome, Stri
     run(pkexec, helper, &["allow", cidr])
 }
 
+/// `Failed` code for a helper too old to know `remove <cidr>` (reported, never skipped silently).
+pub const VERSION_REFUSED: i32 = -2;
+
+/// The `HELPER_VERSION=N` line of the installed helper (root-owned, world-readable; reading it costs no prompt). None when absent or unreadable.
+pub fn helper_version(helper: &Path) -> Option<u32> {
+    std::fs::read_to_string(helper).ok()?.lines().find_map(|l| l.strip_prefix("HELPER_VERSION=")?.trim().parse().ok())
+}
+
+/// The follow's allow: this interface's network (address and mask) as one CIDR. A missing helper is `HelperMissing`, no prompt.
+pub fn allow_for(pkexec: &Path, helper: &Path, lan: (Ipv4Addr, Ipv4Addr)) -> Result<FwOutcome, String> {
+    let cidr = cidr_from(lan.0, lan.1)?;
+    if !helper.exists() {
+        return Ok(FwOutcome::HelperMissing);
+    }
+    allow(pkexec, helper, &cidr)
+}
+
+/// The follow's withdrawal: delete only the tagged rules for exactly this network. Needs helper version 2 or later: a v1 helper reads
+/// `remove <cidr>` as bad usage, so it is refused here as `Failed(VERSION_REFUSED)` (the existing Failed state), never skipped silently.
+pub fn remove_for(pkexec: &Path, helper: &Path, cidr: &str) -> Result<FwOutcome, String> {
+    validate_cidr(cidr)?;
+    if !helper.exists() {
+        return Ok(FwOutcome::HelperMissing);
+    }
+    if !helper_version(helper).is_some_and(|v| v >= 2) {
+        return Ok(FwOutcome::Failed(VERSION_REFUSED));
+    }
+    run(pkexec, helper, &["remove", cidr])
+}
+
+/// The status window shows the waiting firewall step while the poll thread left it for the button (`flag`) or a left network's allow is still on
+/// the stale list: both need one press, and neither is announced any other way. Not while the last press found no active firewall (`no_firewall`):
+/// nothing blocks the phone then, and the stale list is kept silently for the day ufw comes back.
+pub fn button_needed(flag: bool, stale: &[String], no_firewall: bool) -> bool {
+    !no_firewall && (flag || !stale.is_empty())
+}
+
 /// Remove exactly the rules the helper tagged.
 pub fn remove(pkexec: &Path, helper: &Path) -> Result<FwOutcome, String> {
     if !helper.exists() {
         return Ok(FwOutcome::HelperMissing); // no helper, no rule of ours, and no prompt
     }
     run(pkexec, helper, &["remove"])
+}
+
+/// Test helper for every fake script in this crate. Parallel tests fork while a script is being written, and a child that still holds the write fd makes the
+/// first exec fail with ETXTBSY (os error 26). Run the script with `__probe` until it can run (the script must exit 0 on `__probe` before doing anything);
+/// after that no copy of the write fd exists.
+#[cfg(test)]
+pub(crate) fn exec_ready(p: &Path) {
+    for _ in 0..200 {
+        match Command::new(p).arg("__probe").output() {
+            Err(e) if e.raw_os_error() == Some(26) => std::thread::sleep(std::time::Duration::from_millis(10)),
+            _ => return,
+        }
+    }
+    panic!("script never became executable");
 }
 
 #[cfg(test)]
@@ -109,6 +160,7 @@ mod tests {
         let dd = d.display();
         std::fs::write(&p, format!(r#"#!/bin/sh
 D={dd}
+[ "$1" = __probe ] && exit 0
 echo "$@" >> $D/calls.log
 if [ "$1" = status ]; then
   if [ ! -f $D/active ]; then
@@ -127,6 +179,7 @@ if [ "$1" = --force ] && [ "$2" = delete ]; then awk -v n="$3" 'NR!=n' $D/rules 
 exit 0
 "#)).unwrap();
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        exec_ready(&p);
     }
     /// Copy of the shipped script in `d` with only its `UFW=` line pointed at `ufw_path`.
     fn script_copy(d: &Path, ufw_path: &Path) -> PathBuf {
@@ -263,6 +316,115 @@ exit 0
     }
 
     #[test]
+    fn remove_cidr_takes_the_same_good_and_bad_vectors() {
+        let d = tmp("rmv");
+        for g in GOOD {
+            fake_ufw(&d, true, &[&format!("8788/tcp|{g}|arrowbridge"), "22/tcp|Anywhere|"]);
+            let _ = std::fs::remove_file(d.join("calls.log"));
+            let (c, log) = sh(&d, &["remove", g]);
+            assert_eq!(c, 0, "{g}");
+            assert_eq!(rules(&d), vec!["22/tcp|Anywhere|"], "{g}");
+            assert_eq!(log.lines().filter(|l| l.contains("delete")).count(), 1, "{log}");
+        }
+        for b in BAD {
+            fake_ufw(&d, true, &["8788/tcp|10.0.0.0/24|arrowbridge"]);
+            let _ = std::fs::remove_file(d.join("calls.log"));
+            let (c, log) = sh(&d, &["remove", b]);
+            assert_eq!(c, 2, "{b}");
+            assert_eq!(log, "", "{b} reached ufw");
+            assert_eq!(rules(&d).len(), 1);
+        }
+    }
+
+    #[test]
+    fn remove_cidr_deletes_exactly_that_network_and_never_a_substring_match() {
+        let d = tmp("rmone");
+        fake_ufw(&d, true, &[
+            "8788/tcp|10.0.0.0/16|arrowbridge", "22/tcp|10.0.0.0/24|", "8788/tcp|10.0.0.0/24|arrowbridge",
+            "8788/tcp|192.168.1.0/24|arrowbridge", "8788/tcp|110.0.0.0/24|arrowbridge", "8788/tcp|10.0.0.0/240|arrowbridge"]);
+        // a tagged 110.0.0.0/24 and a tagged 10.0.0.0/240 both contain the text 10.0.0.0/24: only the exact source goes
+        let (c, _) = sh(&d, &["remove", "10.0.0.0/24"]);
+        assert_eq!(c, 0);
+        assert_eq!(rules(&d), vec!["8788/tcp|10.0.0.0/16|arrowbridge", "22/tcp|10.0.0.0/24|", "8788/tcp|192.168.1.0/24|arrowbridge", "8788/tcp|110.0.0.0/24|arrowbridge", "8788/tcp|10.0.0.0/240|arrowbridge"]);
+        // the other way round: the /16 goes, the /24 of another block stays
+        let (c, _) = sh(&d, &["remove", "10.0.0.0/16"]);
+        assert_eq!(c, 0);
+        assert_eq!(rules(&d), vec!["22/tcp|10.0.0.0/24|", "8788/tcp|192.168.1.0/24|arrowbridge", "8788/tcp|110.0.0.0/24|arrowbridge", "8788/tcp|10.0.0.0/240|arrowbridge"]);
+    }
+
+    #[test]
+    fn remove_cidr_is_idempotent_and_survives_numbering_that_shifts() {
+        let d = tmp("rmidem");
+        fake_ufw(&d, true, &["22/tcp|Anywhere|", "8788/tcp|10.0.0.0/24|arrowbridge", "8788/tcp|192.168.1.0/24|arrowbridge"]);
+        std::fs::write(d.join("shift_at"), "2").unwrap(); // rule 1 vanishes between the number read and its confirm
+        assert_eq!(sh(&d, &["remove", "192.168.1.0/24"]).0, 0);
+        assert_eq!(rules(&d), vec!["8788/tcp|10.0.0.0/24|arrowbridge"]);
+        let _ = std::fs::remove_file(d.join("calls.log"));
+        let (c, log) = sh(&d, &["remove", "192.168.1.0/24"]); // already gone: still 0, nothing deleted
+        assert_eq!(c, 0);
+        assert!(!log.contains("delete"), "{log}");
+        assert_eq!(rules(&d).len(), 1);
+    }
+
+    #[test]
+    fn remove_cidr_with_two_tagged_rules_leaves_the_no_argument_remove_to_take_both() {
+        let d = tmp("rmboth");
+        fake_ufw(&d, true, &["8788/tcp|10.0.0.0/24|arrowbridge", "8788/tcp|192.168.1.0/24|arrowbridge"]);
+        assert_eq!(sh(&d, &["remove", "10.0.0.0/24"]).0, 0);
+        assert_eq!(rules(&d), vec!["8788/tcp|192.168.1.0/24|arrowbridge"]);
+        fake_ufw(&d, true, &["8788/tcp|10.0.0.0/24|arrowbridge", "8788/tcp|192.168.1.0/24|arrowbridge"]);
+        assert_eq!(sh(&d, &["remove"]).0, 0);
+        assert!(rules(&d).is_empty());
+    }
+
+    #[test]
+    fn remove_cidr_on_an_inactive_ufw_exits_3_and_changes_nothing() {
+        let d = tmp("rminact");
+        fake_ufw(&d, false, &["8788/tcp|10.0.0.0/24|arrowbridge"]);
+        let (c, log) = sh(&d, &["remove", "10.0.0.0/24"]);
+        assert_eq!(c, 3);
+        assert!(mutations(&log).is_empty(), "{log}");
+        assert_eq!(rules(&d).len(), 1);
+    }
+
+    #[test]
+    fn remove_for_needs_helper_version_2_and_sends_the_cidr_as_argv() {
+        let d = tmp("rmfor");
+        let pk = fake_pkexec(&d, 0);
+        // the shipped script is version 2 and the app reads that same line
+        assert_eq!(helper_version(&script()), Some(2));
+        assert_eq!(remove_for(&pk, &script(), "192.168.1.0/24").unwrap(), FwOutcome::Done);
+        assert_eq!(std::fs::read_to_string(d.join("pk.log")).unwrap().trim_end().rsplit_once(' ').unwrap().1, "192.168.1.0/24");
+        assert!(std::fs::read_to_string(d.join("pk.log")).unwrap().contains(" remove 192.168.1.0/24"));
+        // a v1 helper, one with no version line, and an unreadable one are all refused before any prompt
+        let before = std::fs::read_to_string(d.join("pk.log")).unwrap();
+        for (i, body) in ["HELPER_VERSION=1\n", "echo hi\n", "HELPER_VERSION=x\n"].iter().enumerate() {
+            let h = d.join(format!("old{i}"));
+            std::fs::write(&h, body).unwrap();
+            assert_eq!(remove_for(&pk, &h, "192.168.1.0/24").unwrap(), FwOutcome::Failed(VERSION_REFUSED), "{body}");
+        }
+        assert_eq!(std::fs::read_to_string(d.join("pk.log")).unwrap(), before, "a refused helper reached pkexec");
+        // a bad CIDR never reaches pkexec; a missing helper is no prompt
+        assert!(remove_for(&pk, &script(), "8.8.8.0/24").is_err());
+        assert!(remove_for(&pk, &script(), "10.0.0.0/24;ls").is_err());
+        assert_eq!(remove_for(&pk, &d.join("absent"), "10.0.0.0/24").unwrap(), FwOutcome::HelperMissing);
+        assert_eq!(std::fs::read_to_string(d.join("pk.log")).unwrap(), before);
+        // helper exit codes map as for allow
+        assert_eq!(remove_for(&fake_pkexec(&d, 3), &script(), "10.0.0.0/24").unwrap(), FwOutcome::NoFirewall);
+        assert_eq!(remove_for(&fake_pkexec(&d, 126), &script(), "10.0.0.0/24").unwrap(), FwOutcome::Failed(126));
+    }
+
+    #[test]
+    fn allow_for_builds_the_cidr_from_the_interface_and_asks_once() {
+        let d = tmp("alfor");
+        let ip = |s: &str| -> Ipv4Addr { s.parse().unwrap() };
+        assert_eq!(allow_for(&fake_pkexec(&d, 0), &script(), (ip("192.168.43.1"), ip("255.255.255.0"))).unwrap(), FwOutcome::Done);
+        assert!(std::fs::read_to_string(d.join("pk.log")).unwrap().ends_with(" allow 192.168.43.0/24\n"));
+        assert!(allow_for(&fake_pkexec(&d, 0), &script(), (ip("8.8.8.8"), ip("255.255.255.0"))).is_err());
+        assert_eq!(allow_for(&fake_pkexec(&d, 0), &d.join("absent"), (ip("10.0.0.5"), ip("255.255.255.0"))).unwrap(), FwOutcome::HelperMissing);
+    }
+
+    #[test]
     fn remove_with_no_tagged_rules_deletes_nothing() {
         let d = tmp("rm0");
         fake_ufw(&d, true, &["22/tcp|Anywhere|"]);
@@ -294,9 +456,32 @@ exit 0
     /// Fake pkexec records argv and exits with the code in `code`.
     fn fake_pkexec(d: &Path, code: i32) -> PathBuf {
         let p = d.join("pkexec");
-        std::fs::write(&p, format!("#!/bin/sh\necho \"$@\" >> {}/pk.log\nexit {code}\n", d.display())).unwrap();
+        std::fs::write(&p, format!("#!/bin/sh\n[ \"$1\" = __probe ] && exit 0\necho \"$@\" >> {}/pk.log\nexit {code}\n", d.display())).unwrap();
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        exec_ready(&p);
         p
+    }
+
+    /// Review T1: a fake script run right after it was written failed with ETXTBSY (os error 26) when another test forked in that window.
+    /// The fakes now probe until they can run; this forks hard from other threads while writing and running them, and fails on the old fakes.
+    #[test]
+    fn a_fake_script_is_runnable_at_once_even_while_other_threads_fork() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let stop = std::sync::Arc::new(AtomicBool::new(false));
+        let forkers: Vec<_> = (0..3).map(|_| {
+            let s = stop.clone();
+            std::thread::spawn(move || while !s.load(Ordering::Relaxed) { let _ = Command::new("/bin/true").status(); })
+        }).collect();
+        let mut bad = vec![];
+        for i in 0..100 {
+            let d = tmp(&format!("etx{i}"));
+            let p = fake_pkexec(&d, 0);
+            match Command::new(&p).arg("go").status() { Ok(_) => {}, Err(e) => bad.push(format!("{i}: {e}")) }
+            let _ = std::fs::remove_dir_all(&d);
+        }
+        stop.store(true, Ordering::Relaxed);
+        for f in forkers { f.join().unwrap(); }
+        assert!(bad.is_empty(), "{} of 100 fake scripts hit ETXTBSY: {:?}", bad.len(), &bad[..bad.len().min(3)]);
     }
 
     #[test]

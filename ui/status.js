@@ -23,6 +23,8 @@ function refresh() {
     $('model-detail').hidden = s.model_idle !== null;
     $('model-first').hidden = s.model_idle !== true;
     $('helper-missing').hidden = !s.helper_missing;
+    // the firewall step after a network move waits for the Retry firewall button
+    $('fw-waiting').hidden = !s.fw_waiting;
   });
 }
 invoke('status_texts').then(function (r) {
@@ -31,6 +33,7 @@ invoke('status_texts').then(function (r) {
   $('vulkan-failed').textContent = T.vulkan_failed;
   $('model-detail').textContent = T.unknown_detail;
   $('retry').textContent = T.retry_firewall;
+  $('fw-waiting').textContent = T.fw_waiting_after_move;
   $('awake-h').textContent = T.keep_awake_heading;
   $('awake-b').textContent = T.keep_awake_body;
   $('model-first').textContent = T.first_answer;

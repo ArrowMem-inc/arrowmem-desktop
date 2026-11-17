@@ -401,6 +401,8 @@ pub struct StatusView {
     pub vulkan_failed: bool,
     /// Which slowness line to show: "specific" (a model above E4B runs), "generic" (tier unknown), or None.
     pub slowness: Option<String>,
+    /// A firewall step waits for the window's button (a network move was followed, or a left network's allow is still to be withdrawn).
+    pub fw_waiting: bool,
 }
 
 /// llama-server's /props carries `is_sleeping` (bool). It stays answerable while the model is unloaded, unlike
@@ -429,6 +431,7 @@ pub fn status_view(port: u16, llama_port: u16, llama_key: Option<&str>, lan: Opt
         llama_variant,
         vulkan_failed,
         slowness: None,
+        fw_waiting: false,
     }
 }
 
@@ -494,6 +497,8 @@ pub struct StatusLang {
     pub pair_paired_p: String,
     pub fw_cancelled: String,
     pub no_firewall: String,
+    /// Reason shown while the firewall step after a network move waits for the button. Uncleared placeholder in strings/status.json.
+    pub fw_waiting_after_move: String,
     pub slowness: String,
 }
 
@@ -776,7 +781,7 @@ mod tests {
     }
 
     fn status(paired: Option<bool>, idle: Option<bool>, lan: Option<bool>) -> StatusView {
-        StatusView { paired, model: "m".into(), model_idle: idle, lan_reachable: lan, helper_missing: false, llama_variant: None, vulkan_failed: false, slowness: None }
+        StatusView { paired, model: "m".into(), model_idle: idle, lan_reachable: lan, helper_missing: false, llama_variant: None, vulkan_failed: false, slowness: None, fw_waiting: false }
     }
 
     #[test]
@@ -1277,7 +1282,7 @@ mod tests {
     fn status_has_three_fields_and_none_without_lan() {
         let (p, _r) = serve(200, r#"{"phones":[],"max":5}"#);
         let s = status_view(p, 9, None, None, "model note", Path::new("/nonexistent/helper"), Some("cpu".into()), false);
-        assert_eq!(s, StatusView { paired: Some(false), model: "model note".into(), model_idle: None, lan_reachable: None, helper_missing: true, llama_variant: Some("cpu".into()), vulkan_failed: false, slowness: None });
+        assert_eq!(s, StatusView { paired: Some(false), model: "model note".into(), model_idle: None, lan_reachable: None, helper_missing: true, llama_variant: Some("cpu".into()), vulkan_failed: false, slowness: None, fw_waiting: false });
         let s2 = status_view(p, 9, None, Some(ip("127.0.0.1")), "m", Path::new("/"), None, true);
         assert!(s2.vulkan_failed);
         assert!(!s2.helper_missing);
@@ -1293,8 +1298,9 @@ mod tests {
 
     fn pkexec(d: &Path, code: i32) -> PathBuf {
         let p = d.join("pkexec");
-        std::fs::write(&p, format!("#!/bin/sh\necho \"$@\" >> {}/pk.log\nexit {code}\n", d.display())).unwrap();
+        std::fs::write(&p, format!("#!/bin/sh\n[ \"$1\" = __probe ] && exit 0\necho \"$@\" >> {}/pk.log\nexit {code}\n", d.display())).unwrap();
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        crate::firewall::exec_ready(&p);
         p
     }
 
