@@ -30,7 +30,34 @@ same() {
   echo "$b  package $2"
   [ "$a" = "$b" ] || { echo "DIFFERENT: $2" >&2; fail=1; }
 }
+# Leak scan: nothing about the build host or its user may be in any packaged file. Prints only file names and
+# reasons, never the matching text. Allowed /home/ shapes: the "/home/.cargo" the home remap leaves, and the upstream llama.cpp
+# release runner path (home, runner, work). Also fails on the build user's login as a word, on a Tauri dev build (the embedded
+# manifest folder string), on .BUILDINFO builddir or startdir outside /tmp, and on any "installed =" line.
+# Prints one line per finding on stdout; no output means clean.
+leak_scan() {
+  d="$1"; login="${LEAK_LOGIN:-$(id -un)}"; rn=runner
+  find "$d" -type f | sort | while IFS= read -r f; do
+    r="${f#"$d"/}"
+    n="$(grep -a -o '/home/[A-Za-z0-9._-]*\(/[A-Za-z0-9._-]*\)\?' "$f" | grep -Ev "^/home/\\.cargo(/|\$)|^/home/$rn/work\$" | wc -l)"
+    [ "$n" = 0 ] || echo "LEAK: $r: $n /home/ string(s) outside the two neutral shapes"
+    n="$(grep -a -c -w -F -- "$login" "$f" || :)"
+    [ "$n" = 0 ] || echo "LEAK: $r: the build user's login as a word on $n line(s)"
+    case "$r" in
+      usr/bin/arrowmem-desktop)
+        n="$(grep -a -c -E '/[A-Za-z0-9._/-]+/src-tauri([^/]|$)' "$f" || :)"
+        [ "$n" = 0 ] || echo "LEAK: $r: the Tauri config parent folder string is embedded ($n), so this is a dev build (custom-protocol feature missing)";;
+      .BUILDINFO)
+        n="$(grep -E '^(builddir|startdir) = ' "$f" | grep -Evc ' = /tmp/' || :)"
+        [ "$n" = 0 ] || echo "LEAK: $r: builddir or startdir outside /tmp ($n)"
+        n="$(grep -c '^installed = ' "$f" || :)"
+        [ "$n" = 0 ] || echo "LEAK: $r: $n installed = line(s), the build host package list";;
+    esac
+  done
+}
 echo "$PIN  pin     reviewed companion freeze"
+leaks="$(leak_scan "$W")"
+if [ -n "$leaks" ]; then echo "$leaks" >&2; echo "DIFFERENT: leak scan found host or user data in the package" >&2; fail=1; else echo "leak scan: 0 findings"; fi
 # The icon files must be in the package and must be the committed ones (a package with the old solid placeholder must not pass).
 for f in 48x48/apps/arrowmem-desktop.png 128x128/apps/arrowmem-desktop.png 256x256/apps/arrowmem-desktop.png scalable/apps/arrowmem-desktop.svg; do
   [ -f "$W/usr/share/icons/hicolor/$f" ] || { echo "MISSING icon: $f" >&2; fail=1; }

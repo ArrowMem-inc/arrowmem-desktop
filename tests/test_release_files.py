@@ -166,6 +166,38 @@ class Files(unittest.TestCase):
                 if "cargo build --release" in line:
                     self.assertIn("--features custom-protocol", line, "/".join(rel) + ": " + line.strip())
 
+    def test_leak_scan_flags_host_and_user_data(self):
+        # Runs leak_scan from verify-pkg.sh on a fake extracted tree with a fake login. Clean tree: no output. Each planted leak: a line.
+        import shutil, tempfile
+        d = tempfile.mkdtemp()
+        try:
+            v = open(os.path.join(R, "scripts", "verify-pkg.sh")).read()
+            fn = v[v.index("leak_scan() {"):v.index("\n}\n", v.index("leak_scan() {")) + 3]
+            os.makedirs(os.path.join(d, "usr", "bin"))
+            binp, bi = os.path.join(d, "usr", "bin", "arrowmem-desktop"), os.path.join(d, ".BUILDINFO")
+            H = b"/ho" + b"me/"  # planted paths are built at run time, so no source line is itself a local path
+            clean_bin = b"\x00" + H + b".cargo/registry/src\x00" + H + b"runner/work/llama.cpp\x00/build/src-tauri/src/lib.rs\x00"
+            clean_bi = b"format = 2\nbuilddir = /tmp/ab-clean/build\nstartdir = /tmp/ab-clean/src/packaging/arch\n"
+            def scan():
+                r = subprocess.run(["/bin/sh", "-c", fn + 'leak_scan "$1"', "sh", d], capture_output=True, text=True,
+                                   env={"LEAK_LOGIN": "fakelogin9", "PATH": os.environ["PATH"]})
+                return r.stdout
+            def put(b, bi_text):
+                open(binp, "wb").write(b); open(bi, "wb").write(bi_text)
+            put(clean_bin, clean_bi)
+            self.assertEqual(scan(), "")
+            put(clean_bin + H + b"fakelogin9/work/src-tauri\x00", clean_bi)
+            out = scan(); self.assertIn("/home/ string", out); self.assertIn("login", out); self.assertIn("dev build", out)
+            put(clean_bin + b"/tmp/ab-clean/src/src-tauri\x00x", clean_bi)
+            self.assertIn("dev build", scan())
+            put(clean_bin, clean_bi + b"installed = foo-1.0-1\n")
+            self.assertIn("installed =", scan())
+            put(clean_bin, clean_bi.replace(b"/tmp/ab-clean/build", b"/var/build"))
+            self.assertIn("outside /tmp", scan())
+            self.assertNotIn("fakelogin9", scan(), "findings never print the matching text")
+        finally:
+            shutil.rmtree(d)
+
     def test_verify_pkg_reports_different_bytes(self):
         # Runs the comparison half on a fake extracted tree: identical files pass, one changed byte fails.
         import shutil, tempfile
