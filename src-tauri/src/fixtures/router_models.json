@@ -1,0 +1,5 @@
+{"object":"list","data":[
+  {"id":"qwen-coder","object":"model","status":{"value":"loaded"}},
+  {"id":"llama-chat","object":"model","status":{"value":"unloaded"}},
+  {"id":"embed-small","object":"model","status":{"value":"unloaded"}}
+]}

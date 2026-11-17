@@ -4,6 +4,7 @@ pub mod desktop;
 pub mod firstrun;
 pub mod paircode;
 pub mod mesh;
+pub mod ownerroutes;
 pub mod models;
 pub mod modelpick;
 pub mod supervisor;
@@ -707,6 +708,9 @@ pub fn run() {
             #[cfg(target_os = "linux")]
             let llama_port = model_dir.as_ref().map(|d| linuxrun::pick_llama_port(d.parent().unwrap_or(d), std::path::Path::new("/usr/bin/systemctl"))).unwrap_or(linuxrun::LLAMA_PORT);
             app.manage(Info { lan: Mutex::new(None), data_dir: Mutex::new(None), alias: Mutex::new(None), stale: Mutex::new(Vec::new()), fw_wait: Mutex::new(false), model_dir: model_dir.clone(), llama_port, llama_variant: llama_variant.clone(), model_tier: Mutex::new(None), fallback: Mutex::new(None), note: note_status.clone(), heal: Mutex::new(linuxrun::Heal::default()), found: Mutex::new(None), dl: Mutex::new(None), applying: Mutex::new(false), proofs: Arc::new(Mutex::new(models::Proofs::default())) });
+            // The owner routes for a bar panel on this computer: loopback only, port from ARROWMEM_OWNER_PORT (default 8789).
+            // A bind that fails (port taken) leaves the app as it was; no panel then, nothing else changes.
+            let _ = ownerroutes::start(ownerroutes::owner_port(std::env::var("ARROWMEM_OWNER_PORT").ok().as_deref()), ownerroutes::DesktopUpstream { llama_port, key: Box::new(llama_key) });
             // The window asks for Info at once, so it opens only after Info is managed. Started by hand: show the home window; by the autostart entry: the tray only.
             if !started_in_background(&std::env::args().collect::<Vec<_>>()) {
                 open_window(app.handle(), "main", "home.html");

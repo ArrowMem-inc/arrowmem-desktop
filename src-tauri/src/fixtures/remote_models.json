@@ -1,0 +1,5 @@
+{"models":[
+  {"id":"remote-coder-7b","label":"Remote Coder 7B","size_bytes":null,"quant":null,"loaded":true,"hostname":"lab-mini-7"},
+  {"id":"remote-chat-3b","label":"Remote Chat 3B","size_bytes":null,"quant":null,"loaded":false,"machine_id":"abc123"},
+  {"id":"remote-embed","size_bytes":null,"quant":null,"loaded":null}
+]}
