@@ -27,7 +27,7 @@ function cleanText(s) {
 }
 
 function okId(s) {
-  return typeof s === "string" && s.length > 0 && s.length <= MAX_ID && cleanText(s)
+  return typeof s === "string" && s.length > 0 && s.length <= MAX_ID && /^[A-Za-z0-9._:\/-]+$/.test(s)
 }
 
 function okRow(r) {

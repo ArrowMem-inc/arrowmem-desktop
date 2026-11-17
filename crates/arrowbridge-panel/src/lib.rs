@@ -300,7 +300,7 @@ fn clean(s: &str) -> bool {
 }
 
 fn id_ok(s: &str) -> bool {
-    !s.is_empty() && s.len() <= MAX_ID && clean(s)
+    !s.is_empty() && s.len() <= MAX_ID && s.bytes().all(|b| b.is_ascii_alphanumeric() || b".:_/-".contains(&b))
 }
 
 fn label_ok(s: &str) -> bool {

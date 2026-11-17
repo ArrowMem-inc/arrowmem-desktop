@@ -166,10 +166,11 @@ fn ten_thousand_rows_and_markup_render_nothing() {
     m.extend(rows(29, "remote"));
     assert_eq!(list_of(&body(&m, "")), BOTH_UNKNOWN);
     // Markup is data: it stays a JSON string, ASCII, never interpreted here.
-    let id = format!(r#"<img src=\"https://example.invalid/x\">{}"#, '\u{e9}');
-    let out = list_of(&body(&[row(&id, "local")], ""));
-    let want = format!(r#""id":"<img src=\"https://example.invalid/x\">{}u00e9""#, '\\');
-    assert!(out.contains(&want), "{out}");
+    // An id takes an ASCII allow list, so the markup rides in the label.
+    let label = format!(r#"<img src=\"https://example.invalid/x\">{}"#, '\u{e9}');
+    let r = format!(r#"{{"id":"a","label":"{label}","loaded":true,"host":"local","paused":false}}"#);
+    let out = list_of(&body(&[r], ""));
+    assert!(out.contains(r#""id":"a""#) && !out.contains("img") && !out.contains("example"), "{out}");
     assert!(out.is_ascii());
 }
 
@@ -272,9 +273,9 @@ fn the_request_bytes_carry_the_owner_header_and_one_exact_host_and_no_origin() {
     assert!(!req.to_ascii_lowercase().contains("origin") && !req.contains("Content-Length"), "{req}");
 
     let (port, h) = reply(http("200 OK", r#"{"state":"paused"}"#));
-    assert_eq!(run(&args("pause", port, &["--model", "llama \"x\""])), r#"{"state":"paused"}"#);
+    assert_eq!(run(&args("pause", port, &["--model", "org/llama.v2_1:x"])), r#"{"state":"paused"}"#);
     let req = h.join().unwrap();
-    let b = r#"{"model":"llama \"x\""}"#;
+    let b = r#"{"model":"org/llama.v2_1:x"}"#;
     assert!(req.starts_with("POST /v1/pause HTTP/1.1\r\n"), "{req}");
     assert!(req.contains("Content-Type: application/json\r\n") && req.contains(&format!("Content-Length: {}\r\n", b.len())), "{req}");
     assert!(req.ends_with(&format!("\r\n\r\n{b}")), "{req}");
@@ -312,7 +313,7 @@ fn pause_and_resume_replies_are_exactly_paused_or_free() {
 
 #[test]
 fn a_bad_model_id_sends_nothing() {
-    for id in ["", &"x".repeat(201), "a\nb", "a\u{7}b"] {
+    for id in ["", &"x".repeat(201), "a\nb", "a\u{7}b", "a\u{301}b", "a\u{378}b", "a b"] {
         let l = TcpListener::bind("127.0.0.1:0").unwrap();
         l.set_nonblocking(true).unwrap();
         let port = l.local_addr().unwrap().port();
@@ -382,11 +383,29 @@ fn a_32000_deep_array_gives_exit_zero_and_the_unknown_line_not_an_abort() {
 #[test]
 fn format_private_and_unassigned_characters_in_an_id_or_label_make_the_group_unknown() {
     for c in ["\\u202e", "\\u200b", "\\u2028", "\\u2029", "\\ue000", "\\ufffe", "\\ud83d\\ude00", "\\udb40\\udc01"] {
+        // An id now takes an ASCII allow list, so an emoji there is refused; a label keeps the category list.
         let ok = c == "\\ud83d\\ude00";
         for (id, label) in [(format!("a{c}b"), "a".to_string()), ("a".to_string(), format!("a{c}b"))] {
             let r = format!(r#"{{"id":"{id}","label":"{label}","loaded":true,"host":"local","paused":false}}"#);
-            assert_eq!(local_state(&list_of(&body(&[r], ""))), if ok { "ok" } else { "unknown" }, "{c} {id} {label}");
+            let want = ok && id == "a";
+            assert_eq!(local_state(&list_of(&body(&[r], ""))), if want { "ok" } else { "unknown" }, "{c} {id} {label}");
         }
+    }
+}
+
+#[test]
+fn an_id_takes_an_ascii_allow_list_and_a_label_keeps_the_category_list() {
+    let id_row = |id: &str| format!(r#"{{"id":"{id}","label":"a","loaded":true,"host":"local","paused":false}}"#);
+    for id in ["a\\u0301b", "a\\u0378b", "a b", "a\\u00e9b", "a\\ud83d\\ude00b", &"x".repeat(201), ""] {
+        assert_eq!(local_state(&list_of(&body(&[id_row(id)], ""))), "unknown", "id {id:?}");
+    }
+    for id in ["qwen3-coder:30b", "org/model.v2_1", &"x".repeat(200)] {
+        assert_eq!(local_state(&list_of(&body(&[id_row(id)], ""))), "ok", "id {id:?}");
+    }
+    // A label with a combining mark or an emoji still passes: labels render as plain text.
+    for label in ["a\\u0301b", "a b", "a\\ud83d\\ude00b"] {
+        let r = format!(r#"{{"id":"a","label":"{label}","loaded":true,"host":"local","paused":false}}"#);
+        assert_eq!(local_state(&list_of(&body(&[r], ""))), "ok", "label {label:?}");
     }
 }
 
