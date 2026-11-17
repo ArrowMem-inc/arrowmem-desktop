@@ -74,10 +74,8 @@ pub fn read_key(state_dir: &Path) -> Option<String> {
 mod tests {
     use super::*;
 
-    fn tmp(tag: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("apikey-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        d
+    fn tmp(tag: &str) -> crate::testtmp::TmpDir {
+        crate::testtmp::TmpDir::absent(&format!("apikey-{tag}"))
     }
 
     #[test]

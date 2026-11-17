@@ -155,10 +155,8 @@ mod tests {
         ip(192, 168, 4, 20)
     }
 
-    fn tmp(tag: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("minicred-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        d
+    fn tmp(tag: &str) -> crate::testtmp::TmpDir {
+        crate::testtmp::TmpDir::absent(&format!("minicred-{tag}"))
     }
     const CRED: &[u8] = b"pc_storeTestCredential_0123456789abcdef";
     fn pin() -> Pin {

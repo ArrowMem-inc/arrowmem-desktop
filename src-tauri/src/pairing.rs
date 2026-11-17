@@ -569,11 +569,8 @@ mod tests {
     use std::path::PathBuf;
 
     fn ip(s: &str) -> Ipv4Addr { s.parse().unwrap() }
-    fn tmp(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("pairing-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn tmp(tag: &str) -> crate::testtmp::TmpDir {
+        crate::testtmp::TmpDir::new(&format!("pairing-{tag}"))
     }
 
     #[test]

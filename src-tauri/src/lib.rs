@@ -1,4 +1,6 @@
 pub mod autostart;
+#[cfg(test)]
+pub(crate) mod testtmp;
 #[cfg(unix)]
 pub mod desktop;
 pub mod firstrun;
