@@ -14,7 +14,7 @@ class Files(unittest.TestCase):
         toml = re.search(r'(?m)^version = "([^"]+)"', open(os.path.join(R, "src-tauri", "Cargo.toml")).read()).group(1)
         lock = re.search(r'name = "arrowmem-desktop"\nversion = "([^"]+)"', open(os.path.join(R, "src-tauri", "Cargo.lock")).read()).group(1)
         pkg = re.search(r"(?m)^pkgver=(\S+)", open(os.path.join(R, "packaging", "arch", "PKGBUILD")).read()).group(1)
-        self.assertEqual({conf, toml, lock, pkg}, {"0.1.1"})
+        self.assertEqual({conf, toml, lock, pkg}, {"0.1.2"})
 
     def test_sign_script_prints_a_command_and_reads_no_key(self):
         p = os.path.join(R, "scripts", "sign-release.sh")
