@@ -285,12 +285,26 @@ fn frame(buf: &[u8]) -> Option<Option<(usize, Option<usize>)>> {
 
 // ---------------------------------------------------------------- the listing
 
+/// Code points of categories Cf, Zl, Zp, Co and Cn (Cc is `is_control`). std has no category table, so this is
+/// the Cf, Zl, Zp and Co ranges plus the noncharacters and every plane from 4 up; Model.js `BAD` holds the same list.
+const BAD: &[(u32, u32)] = &[
+    (0xAD, 0xAD), (0x600, 0x605), (0x61C, 0x61C), (0x6DD, 0x6DD), (0x70F, 0x70F), (0x890, 0x891), (0x8E2, 0x8E2),
+    (0x180E, 0x180E), (0x200B, 0x200F), (0x2028, 0x202E), (0x2060, 0x2064), (0x2066, 0x206F), (0xE000, 0xF8FF),
+    (0xFDD0, 0xFDEF), (0xFEFF, 0xFEFF), (0xFFF0, 0xFFFB), (0xFFFE, 0xFFFF), (0x110BD, 0x110BD), (0x110CD, 0x110CD),
+    (0x13430, 0x1343F), (0x1BCA0, 0x1BCA3), (0x1D173, 0x1D17A), (0x1FFFE, 0x1FFFF), (0x2FFFE, 0x2FFFF),
+    (0x3FFFE, 0x3FFFF), (0x40000, 0x10FFFF),
+];
+
+fn clean(s: &str) -> bool {
+    !s.chars().any(|c| c.is_control() || BAD.iter().any(|&(a, b)| (a..=b).contains(&(c as u32))))
+}
+
 fn id_ok(s: &str) -> bool {
-    !s.is_empty() && s.len() <= MAX_ID && !s.chars().any(|c| c.is_control())
+    !s.is_empty() && s.len() <= MAX_ID && clean(s)
 }
 
 fn label_ok(s: &str) -> bool {
-    !s.is_empty() && s.chars().count() <= MAX_ID && !s.chars().any(|c| c.is_control())
+    !s.is_empty() && s.chars().count() <= MAX_ID && clean(s)
 }
 
 struct Row {

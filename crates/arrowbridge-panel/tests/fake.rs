@@ -357,3 +357,43 @@ fn the_crate_source_holds_no_write_call_and_the_guard_proves_itself() {
     assert!(writes_to_disk("fn x() { let _ = File::create(\"a\"); }"));
     assert!(writes_to_disk("fn x() { eprintln!(\"a\"); }"));
 }
+
+#[test]
+fn nine_nested_arrays_in_an_ignored_field_read_unknown() {
+    let nest = |n: usize| format!(r#"{{"models":[],"unknown":[],"x":{}{}}}"#, "[".repeat(n), "]".repeat(n));
+    assert_eq!(list_of(&nest(9)), BOTH_UNKNOWN);
+    assert_ne!(list_of(&nest(7)), BOTH_UNKNOWN);
+}
+
+fn binary(a: &[std::ffi::OsString]) -> (std::process::ExitStatus, String, usize) {
+    let o = Command::new(env!("CARGO_BIN_EXE_arrowbridge-panel")).args(a).output().unwrap();
+    (o.status, String::from_utf8(o.stdout).unwrap(), o.stderr.len())
+}
+
+#[test]
+fn a_32000_deep_array_gives_exit_zero_and_the_unknown_line_not_an_abort() {
+    let b = format!(r#"{{"models":[],"unknown":[],"x":{}{}}}"#, "[".repeat(32_000), "]".repeat(32_000));
+    assert!(b.len() < MAX_BODY);
+    let (port, _h) = reply(http("200 OK", &b));
+    let a: Vec<_> = args("list", port, &[]).into_iter().map(Into::into).collect();
+    assert_eq!(binary(&a), (std::process::ExitStatus::default(), format!("{BOTH_UNKNOWN}\n"), 0));
+}
+
+#[test]
+fn format_private_and_unassigned_characters_in_an_id_or_label_make_the_group_unknown() {
+    for c in ["\\u202e", "\\u200b", "\\u2028", "\\u2029", "\\ue000", "\\ufffe", "\\ud83d\\ude00", "\\udb40\\udc01"] {
+        let ok = c == "\\ud83d\\ude00";
+        for (id, label) in [(format!("a{c}b"), "a".to_string()), ("a".to_string(), format!("a{c}b"))] {
+            let r = format!(r#"{{"id":"{id}","label":"{label}","loaded":true,"host":"local","paused":false}}"#);
+            assert_eq!(local_state(&list_of(&body(&[r], ""))), if ok { "ok" } else { "unknown" }, "{c} {id} {label}");
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_non_utf8_argument_gives_exit_zero_and_the_unknown_line() {
+    use std::os::unix::ffi::OsStringExt;
+    let (st, out, err) = binary(&[std::ffi::OsString::from_vec(vec![0xff])]);
+    assert_eq!((st.code(), out, err), (Some(0), format!("{UNKNOWN_STATE}\n"), 0));
+}
