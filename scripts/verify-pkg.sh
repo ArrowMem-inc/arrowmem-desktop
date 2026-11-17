@@ -64,6 +64,8 @@ leak_scan() {
       .BUILDINFO)
         n="$(grep -E '^(builddir|startdir) = ' "$f" | grep -Evc ' = /tmp/' || :)"
         [ "$n" = 0 ] || echo "LEAK: $r: builddir or startdir outside /tmp ($n)"
+        n="$(grep -c '^packager = Unknown Packager$' "$f" || :)"
+        [ "$n" = 1 ] || echo "LEAK: $r: the packager line is not exactly the default Unknown Packager"
         n="$(grep -c '^installed = ' "$f" || :)"
         [ "$n" = 0 ] || echo "LEAK: $r: $n installed = line(s), the build host package list";;
     esac

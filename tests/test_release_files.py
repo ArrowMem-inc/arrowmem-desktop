@@ -185,7 +185,7 @@ class Files(unittest.TestCase):
             binp, bi = os.path.join(d, "usr", "bin", "arrowmem-desktop"), os.path.join(d, ".BUILDINFO")
             H = b"/ho" + b"me/"  # planted paths are built at run time, so no source line is itself a local path
             clean_bin = b"\x00" + H + b".cargo/registry/src\x00" + H + b"runner/work/llama.cpp\x00/build/src-tauri/src/lib.rs\x00"
-            clean_bi = b"format = 2\nbuilddir = /tmp/ab-clean/build\nstartdir = /tmp/ab-clean/src/packaging/arch\n"
+            clean_bi = b"format = 2\nbuilddir = /tmp/ab-clean/build\nstartdir = /tmp/ab-clean/src/packaging/arch\npackager = Unknown Packager\n"
             def scan():
                 r = subprocess.run(["/bin/sh", "-c", fn + 'leak_scan "$1"', "sh", d], capture_output=True, text=True,
                                    env={"LEAK_LOGIN": "fakelogin9", "LEAK_HOST": "FakeHost7", "PATH": os.environ["PATH"]})
@@ -239,6 +239,14 @@ class Files(unittest.TestCase):
         self.assertIn("LEAK: " + binp, out); self.assertIn("stage", out)
         out = self._scan({binp: self.CLEAN_BIN, ".BUILDINFO": self.CLEAN_BI + b"buildenv = /tmp/ab-clean/x\n"})
         self.assertIn("LEAK: .BUILDINFO", out); self.assertIn("stage", out)
+
+    def test_packager_line_must_be_the_default(self):
+        # F4: makepkg writes the PACKAGER of the builder's makepkg.conf into .BUILDINFO; the clean build leaves the default.
+        binp = "usr/bin/arrowmem-desktop"
+        out = self._scan({binp: self.CLEAN_BIN, ".BUILDINFO": self.CLEAN_BI.replace(b"Unknown Packager", b"Some Name <a@b.c>")})
+        self.assertIn("LEAK: .BUILDINFO: the packager line", out); self.assertNotIn("Some Name", out)
+        out = self._scan({binp: self.CLEAN_BIN, ".BUILDINFO": self.CLEAN_BI.replace(b"packager = Unknown Packager\n", b"")})
+        self.assertIn("LEAK: .BUILDINFO: the packager line", out)
 
     def test_mtree_is_scanned_decompressed(self):
         # F3: .MTREE is gzip, so a raw grep cannot see a path inside it.
