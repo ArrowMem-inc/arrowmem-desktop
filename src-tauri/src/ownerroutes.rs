@@ -210,6 +210,8 @@ struct Gate {
     last: [Option<Instant>; 3],
     /// When a pause this listener made must be lifted.
     paused_until: Option<Instant>,
+    /// The id of the pause that set `paused_until`; read only while the hold is active.
+    paused_model: Option<String>,
     retry_at: Option<Instant>,
 }
 
@@ -325,7 +327,8 @@ impl<U: Upstream> Owner<U> {
         match route {
             Route::Models => {
                 let (rows, unknown) = self.listing();
-                let rows: Vec<Value> = rows.iter().map(|r| json!({"id": r.id, "label": r.label, "loaded": r.loaded, "host": r.host.word()})).collect();
+                let held = { let g = self.gate.lock().unwrap(); if g.paused_until.is_some() { g.paused_model.clone() } else { None } };
+                let rows: Vec<Value> = rows.iter().map(|r| json!({"id": r.id, "label": r.label, "loaded": r.loaded, "host": r.host.word(), "paused": held.as_deref() == Some(r.id.as_str())})).collect();
                 let unknown: Vec<&str> = unknown.iter().map(|h| h.word()).collect();
                 (200, json!({"models": rows, "unknown": unknown}).to_string())
             }
@@ -350,6 +353,7 @@ impl<U: Upstream> Owner<U> {
         match reply {
             Some(State::Paused) => {
                 g.paused_until = Some(now + AUTO_RESUME);
+                g.paused_model = Some(model);
                 g.retry_at = None;
             }
             Some(State::Free) => g.paused_until = None,
@@ -570,7 +574,7 @@ mod tests {
         assert_eq!(rows.len(), 6);
         for r in rows {
             assert!(r["host"] == "local" || r["host"] == "remote", "{r}");
-            assert_eq!(r.as_object().unwrap().keys().cloned().collect::<std::collections::BTreeSet<_>>(), ["host", "id", "label", "loaded"].iter().map(|s| s.to_string()).collect());
+            assert_eq!(r.as_object().unwrap().keys().cloned().collect::<std::collections::BTreeSet<_>>(), ["host", "id", "label", "loaded", "paused"].iter().map(|s| s.to_string()).collect());
         }
         assert!(rows.iter().take(3).all(|r| r["host"] == "local") && rows.iter().skip(3).all(|r| r["host"] == "remote"));
         assert_eq!(v["unknown"], json!([]));
@@ -833,6 +837,37 @@ mod tests {
         o.tick(due + MIN_GAP * 2);
         assert!(!o.is_held());
         assert_eq!(f.posts.lock().unwrap().len(), 4);
+    }
+    #[test]
+    fn the_listing_marks_the_held_row_paused_until_resume_or_the_auto_resume_lifts_it() {
+        let ok = r#"{"state":"paused"}"#;
+        let free = r#"{"state":"free"}"#;
+        let f = fake(Some(ROUTER), None, &[Some(ok), Some(free), Some(ok), Some(free)]);
+        let o = owner(&f);
+        let now = t0();
+        let paused = |t: Instant| -> Vec<(String, bool)> {
+            let v = json_of(&o.handle(&get("/v1/models", ""), b"", t));
+            v["models"].as_array().unwrap().iter().map(|r| (r["id"].as_str().unwrap().to_string(), r["paused"].as_bool().unwrap())).collect()
+        };
+        assert!(paused(now).iter().all(|(_, p)| !p), "nothing held");
+        let (h, b) = post("/v1/pause", r#"{"model":"llama-chat"}"#, "");
+        o.handle(&h, &b, now + MIN_GAP);
+        assert_eq!(paused(now + MIN_GAP * 2).into_iter().filter(|(_, p)| *p).map(|(i, _)| i).collect::<Vec<_>>(), vec!["llama-chat"]);
+        let (h, b) = post("/v1/resume", "{}", "");
+        o.handle(&h, &b, now + MIN_GAP * 3);
+        assert!(paused(now + MIN_GAP * 4).iter().all(|(_, p)| !p), "resume clears it");
+        let (h, b) = post("/v1/pause", r#"{"model":"qwen-coder"}"#, "");
+        o.handle(&h, &b, now + MIN_GAP * 5);
+        assert!(paused(now + MIN_GAP * 6).iter().any(|(_, p)| *p));
+        o.tick(now + MIN_GAP * 5 + AUTO_RESUME);
+        assert!(paused(now + MIN_GAP * 8 + AUTO_RESUME).iter().all(|(_, p)| !p), "auto resume clears it");
+        // a pause the coder answers free for holds nothing
+        let f2 = fake(Some(ROUTER), None, &[Some(free)]);
+        let o2 = owner(&f2);
+        let (h, b) = post("/v1/pause", r#"{"model":"qwen-coder"}"#, "");
+        o2.handle(&h, &b, now);
+        let v = json_of(&o2.handle(&get("/v1/models", ""), b"", now + MIN_GAP));
+        assert!(v["models"].as_array().unwrap().iter().all(|r| r["paused"] == false));
     }
     #[test]
     fn a_manual_resume_clears_the_hold_and_free_never_sets_one() {
