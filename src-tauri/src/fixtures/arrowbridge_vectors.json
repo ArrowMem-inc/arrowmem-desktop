@@ -1,0 +1,18 @@
+{
+ "credential": "pc_vectorCredentialNotARealOne_0123456789abcdef",
+ "client_nonce": "000102030405060708090a0b0c0d0e0f",
+ "server_nonce": "101112131415161718191a1b1c1d1e1f",
+ "session_id": "202122232425262728292a2b2c2d2e2f",
+ "cred_id": "c9b9ac3922f77706dbd87722eb11eca1",
+ "client_proof": "7df76a308a8f7841eb7e1d26abfb49bd697ec8fbeb999a91fb9ec6da2099d616",
+ "k_c2s": "30f3a0cba3cac573128e4fa0e512233c6f326116fd89bc73ab6a69790f706877",
+ "k_s2c": "f473b8c3491833813732e21927b065232043908dec59d0b14011ecfc53b201f7",
+ "proof": "238e5468fe6c92cceb0478eaf484f5b51d62585286dbe492c05fc166703c4cd2",
+ "request_plaintext": "{\"message\":\"hello home machine\"}",
+ "request_counter": 1,
+ "request_body": "0000000000000001fe0ad9dbd1de844fb72c63fb0e921860671223d6923943c4d8edf3803d1e91a6c2c64d0ba8d2eabd5a9c06bada337112",
+ "response_plaintext": "{\"reply\":\"hello from home\",\"model\":\"m\",\"backend\":\"local\"}",
+ "response_chunk_size": 16,
+ "response_first_counter": 1,
+ "response_stream": "0000002800000000000000018a717bd97d48048af23a8fae32fb67b30729623e8c56f99015330337ba74b984000000280000000000000002bd75b4753e2b17e1f580c0c1a95b95cd945d3badb178999b77b090d94c772174000000280000000000000003ac15fdbf43cb59feab4bd11d7dc4f2a64dac51b3c29bad9d081212482b4f33b50000002100000000000000045cb4b5ee9a7e9965e39510382d850552d36875fe19bc2ef9ac"
+}
