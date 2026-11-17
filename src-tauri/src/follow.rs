@@ -721,6 +721,20 @@ mod tests {
         assert!(std::fs::read_to_string(r.d.join("pk.log")).unwrap().contains("remove 10.42.0.0/24"));
     }
 
+    /// Review N1: with ufw inactive a press answers NoFirewall, keeps every stale entry (C4), and the "cannot reach ArrowBridge until you approve"
+    /// paragraph must go, because no firewall is blocking anything. The stale list stays for the day ufw comes back.
+    #[test]
+    fn a_no_firewall_press_hides_the_waiting_paragraph_and_keeps_the_stale_list() {
+        let mut stale = vec!["10.42.0.0/24".to_string()];
+        let r = press_button(&mut stale, Some(lan("192.168.1.7")), &|_| Ok(FwOutcome::NoFirewall), &|_| Ok(FwOutcome::NoFirewall));
+        assert_eq!(r, Ok(FwOutcome::NoFirewall));
+        assert_eq!(stale, vec!["10.42.0.0/24"]);
+        let no_firewall = r == Ok(FwOutcome::NoFirewall);
+        assert!(!firewall::button_needed(true, &stale, no_firewall), "the paragraph stays up with no firewall");
+        // any other last outcome keeps it
+        assert!(firewall::button_needed(false, &stale, false));
+    }
+
     /// Review C3: after a move whose firewall step was not answered, the window must show a waiting step. The words are an uncleared placeholder
     /// (key fw_waiting_after_move); this checks the state that drives it and that both languages carry the key.
     #[test]
@@ -733,7 +747,7 @@ mod tests {
         let s = f.tick(&hotspot_net(), Some("wlan0"), &ctx, &hooks, 0);
         flag = waiting_after(&s, flag);
         assert!(flag, "a move left for the button did not raise the waiting state: {s:?}");
-        assert!(firewall::button_needed(flag, &f.stale));
+        assert!(firewall::button_needed(flag, &f.stale, false));
         // polls that change nothing keep it
         let s = f.tick(&hotspot_net(), Some("wlan0"), &ctx, &hooks, 3);
         assert_eq!(s, Step::Unchanged);
@@ -744,8 +758,8 @@ mod tests {
         assert!(!waiting_after(&Step::Followed { to: lan("10.42.0.1"), forced: false, firewall: FwStep::Done }, true));
         assert!(!waiting_after(&Step::Followed { to: lan("10.42.0.1"), forced: false, firewall: FwStep::NotNeeded }, true));
         // a stale entry alone also needs the button, with or without the flag
-        assert!(firewall::button_needed(false, &["10.42.0.0/24".to_string()]));
-        assert!(!firewall::button_needed(false, &[]));
+        assert!(firewall::button_needed(false, &["10.42.0.0/24".to_string()], false));
+        assert!(!firewall::button_needed(false, &[], false));
         // the key holds cleared words in both languages, each naming its own button
         let (t, _) = crate::pairing::status_texts(None);
         assert!(!t.en.fw_waiting_after_move.contains("UNCLEARED PLACEHOLDER") && !t.fr.fw_waiting_after_move.contains("UNCLEARED PLACEHOLDER"));

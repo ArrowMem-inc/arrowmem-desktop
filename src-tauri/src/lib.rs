@@ -218,6 +218,10 @@ fn follow_loop(app: tauri::AppHandle) {
             let mut w = info.fw_wait.lock().unwrap();
             *w = follow::waiting_after(&step, *w);
         }
+        // A new move may land on a network where ufw is on again: ask again rather than trust the last press (review N1).
+        if matches!(step, follow::Step::Followed { .. }) {
+            *info.fw_none.lock().unwrap() = false;
+        }
         match step {
             follow::Step::NoAddress => {
                 let mut g = info.lan.lock().unwrap();
@@ -243,6 +247,8 @@ struct Info {
     stale: Mutex<Vec<String>>,
     /// The poll thread followed a network move and left the firewall step for the window's button (follow::waiting_after). The status window shows it.
     fw_wait: Mutex<bool>,
+    /// The last button press answered NoFirewall (ufw inactive): nothing blocks the phone, so the waiting paragraph is hidden (review N1).
+    fw_none: Mutex<bool>,
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     model_dir: Option<std::path::PathBuf>,
     llama_port: u16,
@@ -470,7 +476,7 @@ fn status_view(info: tauri::State<Info>) -> pairing::StatusView {
     let mut v = pairing::status_view(pairing::COMPANION_PORT, info.llama_port, llama_key().as_deref(), lan, &note, std::path::Path::new(firewall::HELPER_PATH), info.llama_variant.lock().unwrap().clone(), info.fallback.lock().unwrap().as_ref().is_some_and(|f| f.switched));
     let e4b = models::load_manifest().models.iter().find(|m| m.id.contains("E4B")).map(|m| m.tier);
     v.slowness = firstrun::slowness_kind(*info.model_tier.lock().unwrap(), e4b).map(|k| k.as_str().to_string());
-    v.fw_waiting = firewall::button_needed(*info.fw_wait.lock().unwrap(), &info.stale.lock().unwrap());
+    v.fw_waiting = firewall::button_needed(*info.fw_wait.lock().unwrap(), &info.stale.lock().unwrap(), *info.fw_none.lock().unwrap());
     v
 }
 
@@ -498,6 +504,7 @@ fn retry_firewall(info: tauri::State<Info>) -> Result<String, String> {
     };
     #[cfg(not(target_os = "linux"))]
     let r = pairing::retry_firewall(&dir, lan, pkexec, helper)?;
+    *info.fw_none.lock().unwrap() = r == firewall::FwOutcome::NoFirewall;
     if matches!(r, firewall::FwOutcome::Done | firewall::FwOutcome::NoFirewall) {
         *info.fw_wait.lock().unwrap() = false;
     }
@@ -706,7 +713,7 @@ pub fn run() {
             // The model server's loopback port: chosen once from an unusual range and kept, never a fixed 8080 that another program may hold.
             #[cfg(target_os = "linux")]
             let llama_port = model_dir.as_ref().map(|d| linuxrun::pick_llama_port(d.parent().unwrap_or(d), std::path::Path::new("/usr/bin/systemctl"))).unwrap_or(linuxrun::LLAMA_PORT);
-            app.manage(Info { lan: Mutex::new(None), data_dir: Mutex::new(None), alias: Mutex::new(None), stale: Mutex::new(Vec::new()), fw_wait: Mutex::new(false), model_dir: model_dir.clone(), llama_port, llama_variant: llama_variant.clone(), model_tier: Mutex::new(None), fallback: Mutex::new(None), note: note_status.clone(), heal: Mutex::new(linuxrun::Heal::default()), found: Mutex::new(None), dl: Mutex::new(None), applying: Mutex::new(false), proofs: Arc::new(Mutex::new(models::Proofs::default())) });
+            app.manage(Info { lan: Mutex::new(None), data_dir: Mutex::new(None), alias: Mutex::new(None), stale: Mutex::new(Vec::new()), fw_wait: Mutex::new(false), fw_none: Mutex::new(false), model_dir: model_dir.clone(), llama_port, llama_variant: llama_variant.clone(), model_tier: Mutex::new(None), fallback: Mutex::new(None), note: note_status.clone(), heal: Mutex::new(linuxrun::Heal::default()), found: Mutex::new(None), dl: Mutex::new(None), applying: Mutex::new(false), proofs: Arc::new(Mutex::new(models::Proofs::default())) });
             // The window asks for Info at once, so it opens only after Info is managed. Started by hand: show the home window; by the autostart entry: the tray only.
             if !started_in_background(&std::env::args().collect::<Vec<_>>()) {
                 open_window(app.handle(), "main", "home.html");

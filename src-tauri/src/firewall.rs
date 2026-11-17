@@ -103,9 +103,10 @@ pub fn remove_for(pkexec: &Path, helper: &Path, cidr: &str) -> Result<FwOutcome,
 }
 
 /// The status window shows the waiting firewall step while the poll thread left it for the button (`flag`) or a left network's allow is still on
-/// the stale list: both need one press, and neither is announced any other way.
-pub fn button_needed(flag: bool, stale: &[String]) -> bool {
-    flag || !stale.is_empty()
+/// the stale list: both need one press, and neither is announced any other way. Not while the last press found no active firewall (`no_firewall`):
+/// nothing blocks the phone then, and the stale list is kept silently for the day ufw comes back.
+pub fn button_needed(flag: bool, stale: &[String], no_firewall: bool) -> bool {
+    !no_firewall && (flag || !stale.is_empty())
 }
 
 /// Remove exactly the rules the helper tagged.
