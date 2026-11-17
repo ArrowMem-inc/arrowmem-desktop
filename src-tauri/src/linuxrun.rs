@@ -346,11 +346,8 @@ mod tests {
 
     fn ip(s: &str) -> Ipv4Addr { s.parse().unwrap() }
     fn mask() -> Ipv4Addr { ip("255.255.255.0") }
-    fn tmp(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("linuxrun-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn tmp(tag: &str) -> crate::testtmp::TmpDir {
+        crate::testtmp::TmpDir::new(&format!("linuxrun-{tag}"))
     }
     /// Logs argv. Per-unit state: enable creates `active.<unit>`, disable removes it, is-active tests it.
     fn fake(d: &Path) -> PathBuf {

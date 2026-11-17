@@ -282,11 +282,8 @@ mod tests {
     fn llama() -> LlamaUnit<'static> {
         LlamaUnit { llama_bin: Path::new("/opt/am/llama-server"), model: Path::new("/home/u/m/e4b.gguf"), port: 8080, idle_seconds: 600, key_file: Path::new("/home/u/.local/state/arrowbridge/llama-api-key") }
     }
-    fn tmp(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("userunit-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn tmp(tag: &str) -> crate::testtmp::TmpDir {
+        crate::testtmp::TmpDir::new(&format!("userunit-{tag}"))
     }
     /// A fake systemctl that logs argv. State files in `d`: `failon` (exit 1 when args contain its text),
     /// `stuck` (disable and stop do not deactivate), `inactive` (set by disable/stop, cleared by enable).

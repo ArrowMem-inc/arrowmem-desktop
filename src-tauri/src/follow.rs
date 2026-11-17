@@ -310,11 +310,8 @@ mod tests {
     fn ip(s: &str) -> Ipv4Addr { s.parse().unwrap() }
     fn ifc(name: &str, a: &str) -> Iface { Iface { name: name.into(), ip: ip(a), mask: ip("255.255.255.0") } }
     fn lan(a: &str) -> Lan { (ip(a), ip("255.255.255.0")) }
-    fn tmp(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("follow-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn tmp(tag: &str) -> crate::testtmp::TmpDir {
+        crate::testtmp::TmpDir::new(&format!("follow-{tag}"))
     }
     /// Fake systemctl: logs argv; `fail_restart` in the folder makes `restart` exit 1.
     fn fake_ctl(d: &Path) -> PathBuf {
@@ -337,7 +334,7 @@ mod tests {
     fn with(mut v: Vec<Iface>) -> Vec<Iface> { let mut n = noise(); n.append(&mut v); n }
 
     struct Rig {
-        d: PathBuf,
+        d: crate::testtmp::TmpDir,
         ctl: PathBuf,
         state: PathBuf,
         dir: PathBuf,

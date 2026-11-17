@@ -271,11 +271,8 @@ mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
 
-    fn tmp(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("unin-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn tmp(tag: &str) -> crate::testtmp::TmpDir {
+        crate::testtmp::TmpDir::new(&format!("unin-{tag}"))
     }
     fn exe(p: &Path, body: &str) {
         // every fake answers `__probe` first, so exec_ready can wait out ETXTBSY (see firewall::exec_ready)
@@ -283,7 +280,7 @@ mod tests {
         std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o755)).unwrap();
         crate::firewall::exec_ready(p);
     }
-    struct W { d: PathBuf }
+    struct W { d: crate::testtmp::TmpDir }
     impl W {
         fn new(tag: &str, pk_code: i32) -> W {
             let d = tmp(tag);

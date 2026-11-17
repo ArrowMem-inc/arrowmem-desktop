@@ -284,11 +284,8 @@ mod tests {
     use super::*;
     use std::io::Write;
 
-    fn tmp(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("modelpick-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn tmp(tag: &str) -> crate::testtmp::TmpDir {
+        crate::testtmp::TmpDir::new(&format!("modelpick-{tag}"))
     }
 
     /// A tiny valid-looking GGUF: magic, version 3, no tensors, the given kv pairs; padded with zeros to `size` (sparse where the filesystem allows).
@@ -334,7 +331,8 @@ mod tests {
         assert!(is_gguf(&d.join("a.gguf")));
         gguf(&d.join("small.gguf"), None, MIN_MODEL_BYTES - 1);
         assert!(!is_gguf(&d.join("small.gguf")), "below the size floor");
-        std::fs::write(d.join("fake.gguf"), vec![0u8; MIN_MODEL_BYTES as usize]).unwrap();
+        // full size, no magic: a sparse file, so no 100 MB is written
+        File::create(d.join("fake.gguf")).unwrap().set_len(MIN_MODEL_BYTES).unwrap();
         assert!(!is_gguf(&d.join("fake.gguf")), "no magic");
         assert!(!is_gguf(&d.join("missing.gguf")) && !is_gguf(&d), "missing file and a directory");
     }

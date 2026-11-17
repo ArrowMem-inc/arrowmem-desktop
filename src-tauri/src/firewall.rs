@@ -144,11 +144,8 @@ mod tests {
         "10.0.0.0/24;ls", "-1.0.0.0/24", "10.0.0.0/+4"];
 
     fn script() -> PathBuf { Path::new(env!("CARGO_MANIFEST_DIR")).join("../scripts/arrowbridge-fw") }
-    fn tmp(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("fw-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn tmp(tag: &str) -> crate::testtmp::TmpDir {
+        crate::testtmp::TmpDir::new(&format!("fw-{tag}"))
     }
     /// Stateful fake ufw in `d`. Files: `rules` (lines "to|from|comment"), `active` (present = active),
     /// `ufw_fail`, `french` (print French unless LC_ALL=C), `shift_at` (on that numbered-listing call, first drop
