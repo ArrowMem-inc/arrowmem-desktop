@@ -94,7 +94,7 @@ pub fn defer_remove(_: &str) -> Result<FwOutcome, String> {
 pub fn withdraw_stale(stale: &mut Vec<String>, current: Option<&str>, remove: &dyn Fn(&str) -> Result<FwOutcome, String>) -> bool {
     stale.retain(|c| Some(c.as_str()) != current);
     for c in stale.clone() {
-        if ok_outcome(&remove(&c)) {
+        if withdrawn(&remove(&c)) {
             stale.retain(|s| *s != c);
         }
     }
@@ -138,8 +138,15 @@ pub struct Follower {
     gap: bool,
 }
 
+/// The allow step is answered when the rule is in, or there is no firewall to configure.
 fn ok_outcome(r: &Result<FwOutcome, String>) -> bool {
     matches!(r, Ok(FwOutcome::Done) | Ok(FwOutcome::NoFirewall) | Ok(FwOutcome::HelperMissing))
+}
+
+/// Review C4: a stale entry is dropped only when the helper really deleted its rule. NoFirewall (ufw inactive) and HelperMissing deleted nothing, and
+/// the rule would be back the moment ufw is enabled, so the entry stays and the next press retries it.
+fn withdrawn(r: &Result<FwOutcome, String>) -> bool {
+    matches!(r, Ok(FwOutcome::Done))
 }
 
 impl Follower {
@@ -253,7 +260,7 @@ impl Follower {
         let mut waiting = None;
         for c in self.stale.clone() {
             let r = (h.remove)(&c);
-            if ok_outcome(&r) {
+            if withdrawn(&r) {
                 self.stale.retain(|s| *s != c);
             } else {
                 waiting = Some(format!("remove {c}: {r:?}"));
@@ -671,6 +678,42 @@ mod tests {
         assert!(f.stale.is_empty());
         let log: Vec<String> = std::fs::read_to_string(r.d.join("pk.log")).unwrap().lines().map(|l| l.splitn(2, ' ').nth(1).unwrap().to_string()).collect();
         assert_eq!(log, vec!["allow 172.16.5.0/24", "remove 192.168.1.0/24", "remove 10.42.0.0/24"]);
+    }
+
+    /// Review C4: an inactive ufw (helper exit 3) or a missing helper deleted nothing. Dropping the entry then would bring the old allow back
+    /// unnoticed when ufw is enabled again, so only Done clears it and the next press retries.
+    #[test]
+    fn only_done_clears_a_stale_entry_so_an_inactive_ufw_reenabled_does_not_bring_the_old_allow_back_unnoticed() {
+        for i in 0..4 {
+            let kept = || match i { 0 => FwOutcome::NoFirewall, 1 => FwOutcome::HelperMissing, 2 => FwOutcome::Failed(126), _ => FwOutcome::Failed(-2) };
+            let mut stale = vec!["10.42.0.0/24".to_string()];
+            assert!(!withdraw_stale(&mut stale, None, &|_| Ok(kept())), "{:?}", kept());
+            assert_eq!(stale, vec!["10.42.0.0/24"], "{:?} dropped the entry", kept());
+        }
+        let mut stale = vec!["10.42.0.0/24".to_string()];
+        assert!(withdraw_stale(&mut stale, None, &|_| Ok(FwOutcome::Done)));
+        // through the real argv path: ufw inactive (exit 3), then enabled again
+        let r = Rig::new("c4");
+        let helper = helper_path();
+        let off = r.d.join("pk-off");
+        std::fs::write(&off, format!("#!/bin/sh\n[ \"$1\" = __probe ] && exit 0\necho \"$@\" >> {}/off.log\nexit 3\n", r.d.display())).unwrap();
+        std::fs::set_permissions(&off, std::fs::Permissions::from_mode(0o755)).unwrap();
+        exec_ready(&off);
+        let pk_on = recording_pkexec(&r.d);
+        let mut f = at("10.42.0.1");
+        r.tick(&mut f, &noise(), None, 0); // parks 10.42.0.0/24
+        assert_eq!(press_button(&mut f.stale, None, &|_| Ok(FwOutcome::Done), &|c| firewall::remove_for(&off, &helper, c)).is_err(), true);
+        assert_eq!(f.stale, vec!["10.42.0.0/24"], "an inactive ufw dropped the entry");
+        // the poll thread's own firewall step keeps it too
+        let hooks = Hooks { bound: &|_| {}, allow: &|_| Ok(FwOutcome::Done), remove: &|_| Ok(FwOutcome::NoFirewall), busy: &|| false };
+        let s = f.tick(&lan_net(), Some("enp3s0"), &Ctx { ctl: &r.ctl, dir: &r.dir, companion_bin: Path::new("/opt/am/c"), state_dir: &r.state, llama_port: 41717, upstream_model: "m-1" }, &hooks, 3);
+        assert!(matches!(s, Step::Followed { firewall: FwStep::Waiting(_), .. }), "{s:?}");
+        assert_eq!(f.stale, vec!["10.42.0.0/24"]);
+        // ufw is enabled again: the next press finds the entry and deletes the rule
+        let cur = Some(lan("192.168.1.7"));
+        assert_eq!(press_button(&mut f.stale, cur, &|_| Ok(FwOutcome::Done), &|c| firewall::remove_for(&pk_on, &helper, c)), Ok(FwOutcome::Done));
+        assert!(f.stale.is_empty());
+        assert!(std::fs::read_to_string(r.d.join("pk.log")).unwrap().contains("remove 10.42.0.0/24"));
     }
 
     #[test]
