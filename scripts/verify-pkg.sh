@@ -48,6 +48,13 @@ leak_scan() {
       n="$(grep -a -c -i -w -F -- "$host" "$f" || :)"
       [ "$n" = 0 ] || echo "LEAK: $r: the build host's name as a word on $n line(s)"
     fi
+    # The build stage folder (build-clean-pkg.sh) belongs in the two .BUILDINFO lines builddir and startdir and nowhere else. A dev build
+    # of this script would embed it, and unlike the src-tauri marker below it does not depend on the byte that follows.
+    case "$r" in
+      .BUILDINFO) n="$(grep -a -F '/tmp/ab-clean' "$f" | grep -Evc '^(builddir|startdir) = ' || :)";;
+      *) n="$(grep -a -c -F '/tmp/ab-clean' "$f" || :)";;
+    esac
+    [ "$n" = 0 ] || echo "LEAK: $r: the build stage path on $n line(s) outside the two .BUILDINFO lines"
     case "$r" in
       usr/bin/arrowmem-desktop)
         n="$(grep -a -c -E '/[A-Za-z0-9._/-]+/src-tauri([^/]|$)' "$f" || :)"

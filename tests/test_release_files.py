@@ -211,6 +211,35 @@ class Files(unittest.TestCase):
         finally:
             shutil.rmtree(d)
 
+    def _scan(self, files):
+        # Runs leak_scan from verify-pkg.sh on a fake extracted tree: files is {relative name: bytes}. Returns stdout.
+        import shutil, tempfile
+        d = tempfile.mkdtemp()
+        try:
+            v = open(os.path.join(R, "scripts", "verify-pkg.sh")).read()
+            fn = v[v.index("leak_scan() {"):v.index("\n}\n", v.index("leak_scan() {")) + 3]
+            for rel, b in files.items():
+                os.makedirs(os.path.dirname(os.path.join(d, rel)), exist_ok=True)
+                open(os.path.join(d, rel), "wb").write(b)
+            return subprocess.run(["/bin/sh", "-c", fn + 'leak_scan "$1"', "sh", d], capture_output=True, text=True,
+                                  env={"LEAK_LOGIN": "fakelogin9", "LEAK_HOST": "FakeHost7", "PATH": os.environ["PATH"]}).stdout
+        finally:
+            shutil.rmtree(d)
+
+    H = b"/ho" + b"me/"  # planted paths are built at run time, so no source line is itself a local path
+    CLEAN_BIN = b"\x00" + H + b".cargo/registry/src\x00" + H + b"runner/work/llama.cpp\x00/build/src-tauri/src/lib.rs\x00"
+    CLEAN_BI = (b"format = 2\nbuilddir = /tmp/ab-clean/build\nstartdir = /tmp/ab-clean/src/packaging/arch\n"
+                b"packager = Unknown Packager\n")
+
+    def test_stage_path_is_in_no_file_but_the_two_buildinfo_lines(self):
+        # F2: the dev build marker needs the byte after src-tauri not to be "/", so a neighbouring string hides it. The stage path does not depend on that.
+        binp = "usr/bin/arrowmem-desktop"
+        self.assertEqual(self._scan({binp: self.CLEAN_BIN, ".BUILDINFO": self.CLEAN_BI}), "")
+        out = self._scan({binp: self.CLEAN_BIN + b"/tmp/ab-clean/src/src-tauri/usr/lib\x00", ".BUILDINFO": self.CLEAN_BI})
+        self.assertIn("LEAK: " + binp, out); self.assertIn("stage", out)
+        out = self._scan({binp: self.CLEAN_BIN, ".BUILDINFO": self.CLEAN_BI + b"buildenv = /tmp/ab-clean/x\n"})
+        self.assertIn("LEAK: .BUILDINFO", out); self.assertIn("stage", out)
+
     def test_no_source_file_names_the_build_host(self):
         # The word comes from hostname at test time, never written here. The unit template in userunit.rs is compiled into the binary.
         host = (subprocess.run(["hostname"], capture_output=True, text=True).stdout.strip() or "x" * 40)
