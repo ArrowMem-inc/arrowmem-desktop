@@ -166,6 +166,14 @@ class Files(unittest.TestCase):
                 if "cargo build --release" in line:
                     self.assertIn("--features custom-protocol", line, "/".join(rel) + ": " + line.strip())
 
+    def test_clean_build_copies_the_pinned_companion_and_never_refreezes(self):
+        t = open(os.path.join(R, "scripts", "build-clean-pkg.sh")).read()
+        code = "\n".join(l for l in t.splitlines() if not l.lstrip().startswith("#"))
+        self.assertNotIn("build-companion", code)
+        self.assertIn("companion-freeze.sha256", code)
+        self.assertIn('[ "$FOUND" = "$PIN" ] || { echo "refusing', code)
+        self.assertLess(code.index('[ "$FOUND" = "$PIN" ]'), code.index('cp -a "$FREEZE_SRC"'))
+
     def test_leak_scan_flags_host_and_user_data(self):
         # Runs leak_scan from verify-pkg.sh on a fake extracted tree with a fake login. Clean tree: no output. Each planted leak: a line.
         import shutil, tempfile

@@ -3,7 +3,7 @@
 #   sh scripts/build-clean-pkg.sh        (from a clean checkout; builds the COMMITTED tree, never the working tree)
 # What it does, in a neutral folder (/tmp/ab-clean, no user name in any path):
 #   1. exports HEAD with git archive, copies the already verified llama-server sidecars;
-#   2. freezes the companion from the pinned commit with scripts/build-companion.sh (allowlist of runtime files, comments and docstrings stripped, neutral sysconfig);
+#   2. copies the pinned companion freeze, only when its sha256 equals scripts/companion-freeze.sha256, else refuses (it never runs build-companion.sh);
 #   3. builds the Rust app with --remap-path-prefix for the build folder, the cargo registry and the toolchain, so no home path survives in a panic location;
 #   4. runs makepkg with a neutral builddir and startdir, the default packager ("Unknown Packager"), and an empty installed-package list (pacman -Qi is answered by a wrapper that
 #      prints nothing), so .BUILDINFO names no host package and no home folder. A real clean chroot (extra-x86_64-build) needs root, which this seat does not have.
@@ -19,10 +19,15 @@ git -C "$HERE" archive HEAD | tar -x -C "$STAGE/src"
 mkdir -p "$STAGE/src/src-tauri/binaries"
 for v in llama-cpu llama-vulkan; do cp -a "$HERE/src-tauri/binaries/$v" "$STAGE/src/src-tauri/binaries/$v"; done
 export TMPDIR="$STAGE/tmp"
-# 1. the companion freeze (python3.12 must be on PATH by exact name)
-( cd "$STAGE/src" && sh scripts/build-companion.sh )
+# 1. the companion: the pinned freeze is COPIED, never rebuilt (PyInstaller output is not byte-identical, ADD 813 b). Refuse unless its sha256 equals scripts/companion-freeze.sha256.
+PIN="$(tr -d ' \n' < "$HERE/scripts/companion-freeze.sha256")"
+FREEZE_SRC="$HERE/src-tauri/binaries/arrowbridge-companion-x86_64-unknown-linux-gnu"
+[ -f "$FREEZE_SRC" ] || { echo "refusing: the pinned companion $FREEZE_SRC is missing; pin is $PIN" >&2; exit 2; }
+FOUND="$(sha256sum "$FREEZE_SRC" | cut -d' ' -f1)"
+[ "$FOUND" = "$PIN" ] || { echo "refusing: companion sha256 $FOUND is not the pin $PIN" >&2; exit 2; }
 FREEZE="$STAGE/src/src-tauri/binaries/arrowbridge-companion-x86_64-unknown-linux-gnu"
-echo "freeze $(sha256sum "$FREEZE" | cut -d' ' -f1) $(stat -c %s "$FREEZE") bytes"
+cp -a "$FREEZE_SRC" "$FREEZE"
+echo "freeze $(sha256sum "$FREEZE" | cut -d' ' -f1) $(stat -c %s "$FREEZE") bytes (the pin)"
 # 2. the app, no home path in it
 export CARGO_TARGET_DIR="$STAGE/target"
 RUSTFLAGS="--remap-path-prefix=$STAGE/src=/build --remap-path-prefix=$STAGE/target=/target --remap-path-prefix=$HOME/.cargo=/cargo --remap-path-prefix=$HOME/.rustup=/rustup --remap-path-prefix=$HOME=/home"
