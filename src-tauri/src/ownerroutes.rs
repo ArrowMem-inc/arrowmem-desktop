@@ -1132,6 +1132,37 @@ mod tests {
         assert!(t.elapsed() < Duration::from_secs(1), "{:?}", t.elapsed());
         run.stop();
     }
+    /// T1: a DesktopUpstream whose state dir holds a pairing yields the remote rows through the real open path (a fake companion
+    /// stands behind the dial; the gate refuses loopback, so the production dialer cannot reach one in a test).
+    #[test]
+    fn a_desktop_upstream_with_a_paired_state_dir_yields_remote_rows() {
+        use crate::mini_remote::tests::{fake, CRED, LIST, MID};
+        let d = crate::testtmp::TmpDir::absent("owner-paired");
+        let pin = crate::minicred::Pin::new(&format!("{}.{}.{}.{}", 192, 168, 4, 20), 8788, CRED, &MID).unwrap();
+        crate::minicred::save(&d, &pin).unwrap();
+        let remote = Arc::new(crate::mini_remote::MiniRemote::with_dialer(
+            d.to_path_buf(),
+            Arc::new(|_, _| Some(Box::new(fake(Some(MID), 200, LIST)) as Box<dyn crate::sealed::Transport + Send>)),
+        ));
+        let (port, _rx) = serve_with(200, ROUTER);
+        let up = DesktopUpstream::with_remote(port, Box::new(|| None), remote);
+        // the first read starts the open and reads unknown; the answer lands within a moment
+        let mut got = up.remote_listing();
+        for _ in 0..300 {
+            if got.is_some() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+            got = up.remote_listing();
+        }
+        assert_eq!(got.as_deref(), Some(LIST));
+        let o = Owner::new(up, P);
+        let r = o.handle(&get("/v1/models", ""), b"", t0());
+        let v = json_of(&r);
+        assert!(v["models"].as_array().unwrap().iter().any(|m| m["host"] == "remote" && m["id"] == "default"), "{v}");
+        assert_eq!(v["unknown"], serde_json::json!([]), "{v}");
+    }
+
     /// A real MiniRemote whose remote open stalls 10 s; the coder answers at once.
     struct StalledRemote(crate::mini_remote::MiniRemote);
     impl Upstream for StalledRemote {

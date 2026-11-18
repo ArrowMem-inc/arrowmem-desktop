@@ -162,6 +162,35 @@ mod tests {
     fn pin() -> Pin {
         Pin::new(&lan(), 8788, CRED, &[7u8; 16]).unwrap()
     }
+    /// T2, child half. Only does anything when the parent set T2_CHILD and ran it with the folder holding a valid pairing as cwd.
+    #[test]
+    fn t2_child_reads_the_cwd_folder_as_paired_and_an_empty_state_dir_as_unpaired() {
+        if std::env::var_os("T2_CHILD").is_none() {
+            return;
+        }
+        assert!(load(Path::new(".")).is_some(), "the precondition: the pairing file in cwd is valid and readable as a state dir");
+        assert!(load(Path::new("")).is_none(), "an empty state dir must not resolve to cwd");
+        assert!(crate::mini_remote::RemoteListing::remote_listing(&crate::mini_remote::MiniRemote::new(std::path::PathBuf::new())).is_none());
+    }
+
+    /// T2: an empty state dir reads unpaired even with a valid 0600 pairing file in cwd. cwd is process wide, so the check runs in
+    /// a child of this test binary and no other test sees the change.
+    #[test]
+    fn an_empty_state_dir_reads_unpaired_even_with_a_valid_pairing_file_in_cwd() {
+        let d = tmp("t2-cwd");
+        save(&d, &pin()).unwrap();
+        assert_eq!(std::fs::metadata(d.join(FILE)).unwrap().permissions().mode() & 0o777, 0o600);
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "minicred::tests::t2_child_reads_the_cwd_folder_as_paired_and_an_empty_state_dir_as_unpaired"])
+            .current_dir(&*d)
+            .env("T2_CHILD", "1")
+            .env("TMPDIR", &*d)
+            .output()
+            .unwrap();
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success() && text.contains("1 passed"), "child: {text} {}", String::from_utf8_lossy(&out.stderr));
+    }
+
     fn write_raw(d: &Path, bytes: &[u8], mode: u32) {
         std::fs::create_dir_all(d).unwrap();
         std::fs::set_permissions(d, std::fs::Permissions::from_mode(0o700)).unwrap();

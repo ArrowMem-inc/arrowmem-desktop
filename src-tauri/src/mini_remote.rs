@@ -155,7 +155,7 @@ impl RemoteListing for MiniRemote {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::sealed::{derive_keys, hex, open_proof, unhex};
     use std::sync::{Arc, Mutex};
@@ -165,15 +165,15 @@ mod tests {
         format!("{a}.{b}.{c}.{d}")
     }
 
-    const CRED: &[u8] = b"pc_remoteListingCredential_0123456789ab";
-    const MID: [u8; 16] = [0x5a; 16];
+    pub(crate) const CRED: &[u8] = b"pc_remoteListingCredential_0123456789ab";
+    pub(crate) const MID: [u8; 16] = [0x5a; 16];
 
     fn dir(tag: &str) -> crate::testtmp::TmpDir {
         crate::testtmp::TmpDir::absent(&format!("miniremote-{tag}"))
     }
 
     /// An in process companion: no socket. Seals under the keys the real derivation gives.
-    struct Fake {
+    pub(crate) struct Fake {
         mid: Option<[u8; 16]>,
         status: u16,
         list: &'static str,
@@ -208,10 +208,10 @@ mod tests {
             Some((self.status, [&(frame.len() as u32).to_be_bytes()[..], &frame].concat()))
         }
     }
-    fn fake(mid: Option<[u8; 16]>, status: u16, list: &'static str) -> Fake {
+    pub(crate) fn fake(mid: Option<[u8; 16]>, status: u16, list: &'static str) -> Fake {
         Fake { mid, status, list, calls: Arc::new(Mutex::new(vec![])), keys: Mutex::new(None) }
     }
-    const LIST: &str = r#"{"models":[{"id":"default","label":"One","size_bytes":null,"quant":null,"loaded":true}]}"#;
+    pub(crate) const LIST: &str = r#"{"models":[{"id":"default","label":"One","size_bytes":null,"quant":null,"loaded":true}]}"#;
 
     fn paired(tag: &str, mid: &[u8]) -> (MiniRemote, minicred::Pin, crate::testtmp::TmpDir) {
         let d = dir(tag);
