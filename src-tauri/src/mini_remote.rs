@@ -24,13 +24,22 @@ pub trait RemoteListing {
 /// admit a models call every 2 s, so the answer of the last open (a listing or None) is reused inside this interval.
 pub const MIN_OPEN_GAP: std::time::Duration = std::time::Duration::from_secs(15);
 
-type Opener = std::sync::Arc<dyn Fn() -> Option<String> + Send + Sync>;
+/// What one open produced: the listing (or unknown) and whether it cost a session open on the remote machine.
+pub struct Opened {
+    body: Option<String>,
+    cost: bool,
+}
+
+type Opener = std::sync::Arc<dyn Fn() -> Opened + Send + Sync>;
+type Dialer = std::sync::Arc<dyn Fn(&str, u16) -> Option<Box<dyn Transport + Send>> + Send + Sync>;
 
 /// The last answer and whether an open is running. The lock is only ever held to read or write these two, never across an open.
 #[derive(Default)]
 struct Cache {
     last: Option<(std::time::Instant, Option<String>)>,
     opening: bool,
+    /// Bumped by `reset`; an open that began under an older value lands nowhere.
+    gen: u64,
 }
 
 pub struct MiniRemote {
@@ -40,57 +49,75 @@ pub struct MiniRemote {
 
 impl MiniRemote {
     pub fn new(state_dir: PathBuf) -> MiniRemote {
-        MiniRemote::with_opener(Box::new(move || {
-            let pin = minicred::load(&state_dir)?;
-            let t = TcpTransport::dial(&pin.host, pin.port).ok()?;
-            listing_via(&t, pin.credential(), &pin)
+        MiniRemote::with_dialer(state_dir, std::sync::Arc::new(|host, port| TcpTransport::dial(host, port).ok().map(|t| Box::new(t) as Box<dyn Transport + Send>)))
+    }
+
+    /// The production open with a dialer of the caller's (a test passes a counting fake). No pairing file and a refused address
+    /// cost no session open on the remote machine, so those answers are not held.
+    pub(crate) fn with_dialer(state_dir: PathBuf, dial: Dialer) -> MiniRemote {
+        MiniRemote::with_opened(Box::new(move || {
+            let Some(pin) = minicred::load(&state_dir) else { return Opened { body: None, cost: false } };
+            let Some(t) = dial(&pin.host, pin.port) else { return Opened { body: None, cost: false } };
+            Opened { body: listing_via(&*t, pin.credential(), &pin), cost: true }
         }))
     }
 
-    /// `opener` is the whole cost: dial, open a session, read the models. Tests pass a fake.
+    /// `opener` is the whole cost: dial, open a session, read the models. Tests pass a fake that always costs an open.
+    #[cfg(test)]
     pub(crate) fn with_opener(opener: Box<dyn Fn() -> Option<String> + Send + Sync>) -> MiniRemote {
+        MiniRemote::with_opened(Box::new(move || Opened { body: opener(), cost: true }))
+    }
+
+    fn with_opened(opener: Box<dyn Fn() -> Opened + Send + Sync>) -> MiniRemote {
         MiniRemote { opener: opener.into(), cache: Default::default() }
     }
 
-    /// R7. `Some(answer)`: serve it (the last open is under MIN_OPEN_GAP old, or an open is running and the answer is unknown).
-    /// `None`: this caller now owns a new open and must call `finish`. An answer is never served past the interval, a failure
-    /// included. No caller waits for an open: a burst makes one, the rest read unknown until it lands.
-    fn begin(&self, now: std::time::Instant) -> Option<Option<String>> {
+    /// R6: drop the held answer. Called in process right after the pairing file is saved or forgotten; there is no HTTP route to it.
+    /// An open already running is forgotten too: its answer was read before the change and lands nowhere.
+    pub fn reset(&self) {
+        let mut g = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        g.last = None;
+        g.opening = false;
+        g.gen += 1;
+    }
+
+    /// R7. `Ok(answer)`: serve it (the last open is under MIN_OPEN_GAP old, or an open is running and the answer is unknown).
+    /// `Err(gen)`: this caller now owns a new open and must call `finish` with that gen. An answer is never served past the
+    /// interval, a failure included. No caller waits for an open: a burst makes one, the rest read unknown until it lands.
+    fn begin(&self, now: std::time::Instant) -> Result<Option<String>, u64> {
         let mut g = self.cache.lock().unwrap_or_else(|e| e.into_inner());
         if g.opening {
-            return Some(None);
+            return Ok(None);
         }
         if let Some((t, body)) = g.last.as_ref() {
             if now.saturating_duration_since(*t) < MIN_OPEN_GAP {
-                return Some(body.clone());
+                return Ok(body.clone());
             }
         }
         g.opening = true;
-        None
-    }
-
-    fn finish(&self, now: std::time::Instant, body: Option<String>) {
-        finish(&self.cache, now, body);
+        Err(g.gen)
     }
 
     /// The open of this caller runs on a thread of its own; the caller reads unknown at once.
-    fn open_in_background(&self) {
+    fn open_in_background(&self, gen: u64) {
         let (opener, cache) = (self.opener.clone(), self.cache.clone());
         std::thread::spawn(move || {
-            let body = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| opener())).unwrap_or(None);
-            finish(&cache, std::time::Instant::now(), body);
+            let o = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| opener())).unwrap_or(Opened { body: None, cost: true });
+            finish(&cache, gen, std::time::Instant::now(), o);
         });
     }
 
     /// Test helper: the same rule with the open run inline.
     #[cfg(test)]
     fn bounded(&self, now: std::time::Instant, open: impl FnOnce() -> Option<String>) -> Option<String> {
-        if let Some(served) = self.begin(now) {
-            return served;
+        match self.begin(now) {
+            Ok(served) => served,
+            Err(gen) => {
+                let body = open();
+                finish(&self.cache, gen, now, Opened { body: body.clone(), cost: true });
+                body
+            }
         }
-        let body = open();
-        self.finish(now, body.clone());
-        body
     }
 
     /// The listing through any transport (the production one is `TcpTransport::dial` on the pinned address).
@@ -100,9 +127,13 @@ impl MiniRemote {
     }
 }
 
-fn finish(cache: &std::sync::Mutex<Cache>, now: std::time::Instant, body: Option<String>) {
+/// Lands an open. Under a newer gen (a reset came) it lands nowhere. Only an answer that cost a session open is held.
+fn finish(cache: &std::sync::Mutex<Cache>, gen: u64, now: std::time::Instant, o: Opened) {
     let mut g = cache.lock().unwrap_or_else(|e| e.into_inner());
-    g.last = Some((now, body));
+    if g.gen != gen {
+        return;
+    }
+    g.last = o.cost.then_some((now, o.body));
     g.opening = false;
 }
 
@@ -114,9 +145,9 @@ fn listing_via(t: &dyn Transport, cred: &[u8], pin: &minicred::Pin) -> Option<St
 impl RemoteListing for MiniRemote {
     fn remote_listing(&self) -> Option<String> {
         match self.begin(std::time::Instant::now()) {
-            Some(served) => served,
-            None => {
-                self.open_in_background();
+            Ok(served) => served,
+            Err(gen) => {
+                self.open_in_background(gen);
                 None
             }
         }
@@ -250,6 +281,105 @@ mod tests {
         let later = t0 + std::time::Duration::from_secs(60 + 16);
         assert_eq!(r.bounded(later, || r.listing_via(&down, CRED, &pin)), None);
         assert_eq!(*down.calls.lock().unwrap(), ["session-open", "chat"]);
+    }
+
+    /// A dialer that hands out a fresh Fake each time and counts the dials; `calls` is shared by every Fake it makes.
+    fn counting_dialer() -> (Dialer, Arc<std::sync::atomic::AtomicUsize>, Arc<Mutex<Vec<String>>>) {
+        let dials = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let (d2, c2) = (dials.clone(), calls.clone());
+        let dial: Dialer = Arc::new(move |_, _| {
+            d2.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Some(Box::new(Fake { mid: Some(MID), status: 200, list: LIST, calls: c2.clone(), keys: Mutex::new(None) }) as Box<dyn Transport + Send>)
+        });
+        (dial, dials, calls)
+    }
+    fn session_opens(calls: &Mutex<Vec<String>>) -> usize {
+        calls.lock().unwrap().iter().filter(|c| *c == "session-open").count()
+    }
+    /// Waits for the background open to land (at most 3 s).
+    fn settle(r: &MiniRemote) {
+        for _ in 0..300 {
+            if !r.cache.lock().unwrap().opening {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        panic!("the open never finished");
+    }
+    fn pin() -> minicred::Pin {
+        minicred::Pin::new(&ip(192, 168, 4, 20), 8788, CRED, &MID).unwrap()
+    }
+
+    /// R6: saving a pairing resets the held answer, so the first call after it opens a session and does not read a stale unknown.
+    #[test]
+    fn a_save_then_a_call_inside_the_interval_does_one_session_open() {
+        let d = dir("r6save");
+        let (dial, dials, calls) = counting_dialer();
+        let r = MiniRemote::with_dialer(d.to_path_buf(), dial);
+        assert_eq!(r.remote_listing(), None);
+        settle(&r);
+        assert_eq!(dials.load(std::sync::atomic::Ordering::SeqCst), 0, "no pairing file: nothing dialled");
+        minicred::save(&d, &pin()).unwrap();
+        r.reset();
+        assert_eq!(r.remote_listing(), None, "the open is in flight");
+        settle(&r);
+        assert_eq!(r.remote_listing().as_deref(), Some(LIST));
+        assert_eq!(session_opens(&calls), 1);
+    }
+
+    /// R6: forgetting resets the held listing: the next call reads unknown with no dial.
+    #[test]
+    fn a_forget_then_a_call_reads_unknown_with_no_dial() {
+        let (r, _pin, d) = paired_with("r6forget");
+        settle_after_call(&r);
+        assert_eq!(r.0.remote_listing().as_deref(), Some(LIST), "a paired remote lists");
+        let dialled = r.1.load(std::sync::atomic::Ordering::SeqCst);
+        minicred::forget(&d).unwrap();
+        r.0.reset();
+        assert_eq!(r.0.remote_listing(), None, "the old listing is not served after a forget");
+        settle(&r.0);
+        assert_eq!(r.1.load(std::sync::atomic::Ordering::SeqCst), dialled, "a forgotten pairing is not dialled");
+        assert_eq!(r.0.remote_listing(), None);
+    }
+    fn paired_with(tag: &str) -> ((MiniRemote, Arc<std::sync::atomic::AtomicUsize>), minicred::Pin, crate::testtmp::TmpDir) {
+        let d = dir(tag);
+        minicred::save(&d, &pin()).unwrap();
+        let (dial, dials, _calls) = counting_dialer();
+        ((MiniRemote::with_dialer(d.to_path_buf(), dial), dials), pin(), d)
+    }
+    fn settle_after_call(r: &(MiniRemote, Arc<std::sync::atomic::AtomicUsize>)) {
+        assert_eq!(r.0.remote_listing(), None);
+        settle(&r.0);
+    }
+
+    /// R6: only an answer that cost a session open is held. An unpaired read is not, so a pairing that lands is seen at once.
+    #[test]
+    fn an_answer_that_cost_no_open_is_not_held() {
+        let d = dir("r6nocost");
+        let (dial, _dials, calls) = counting_dialer();
+        let r = MiniRemote::with_dialer(d.to_path_buf(), dial);
+        assert_eq!(r.remote_listing(), None);
+        settle(&r);
+        minicred::save(&d, &pin()).unwrap();
+        assert_eq!(r.remote_listing(), None, "the open is in flight");
+        settle(&r);
+        assert_eq!(r.remote_listing().as_deref(), Some(LIST), "no reset was called and the unpaired read was not held");
+        assert_eq!(session_opens(&calls), 1);
+    }
+
+    /// R6: an open that was already running when the pairing changed lands nowhere.
+    #[test]
+    fn an_open_in_flight_when_the_pairing_changes_is_not_kept() {
+        let r = MiniRemote::with_opener(Box::new(|| {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            Some(LIST.to_string())
+        }));
+        assert_eq!(r.remote_listing(), None);
+        r.reset();
+        std::thread::sleep(std::time::Duration::from_millis(600));
+        assert_eq!(r.cache.lock().unwrap().last.is_none(), true, "the old open landed after the reset");
+        assert_eq!(r.remote_listing(), None, "a fresh open starts and is not served from the old one");
     }
 
     /// R7: a burst makes one open, and no caller waits for it: the callers read unknown at once and the answer lands later.

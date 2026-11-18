@@ -264,7 +264,7 @@ impl Pair {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     /// A dotted quad assembled at run time: no address literal is written in this file.
@@ -287,7 +287,7 @@ mod tests {
     }
 
     // the companion's side, from the Python source, so the whole flow runs offline
-    struct Companion {
+    pub(crate) struct Companion {
         sk: StaticSecret,
         public: [u8; 32],
         nonce: [u8; 16],
@@ -295,15 +295,15 @@ mod tests {
         key: Option<[u8; 32]>,
     }
     impl Companion {
-        fn new(b: u8, d: u8) -> Companion {
+        pub(crate) fn new(b: u8, d: u8) -> Companion {
             let sk = StaticSecret::from([b; 32]);
             let public = PublicKey::from(&sk).to_bytes();
             Companion { sk, public, nonce: [d; 16], hid: "hs_Abc-123_xyz".into(), key: None }
         }
-        fn start_reply(&self) -> Vec<u8> {
+        pub(crate) fn start_reply(&self) -> Vec<u8> {
             serde_json::json!({"handshake_id": self.hid, "public_key": b64(&self.public), "commitment": b64(&commitment(&self.nonce, &self.public))}).to_string().into_bytes()
         }
-        fn reveal_reply(&mut self, start_body: &str, reveal_body: &str) -> Vec<u8> {
+        pub(crate) fn reveal_reply(&mut self, start_body: &str, reveal_body: &str) -> Vec<u8> {
             let s: serde_json::Value = serde_json::from_str(start_body).unwrap();
             let r: serde_json::Value = serde_json::from_str(reveal_body).unwrap();
             let ppub = unb64(s["public_key"].as_str().unwrap()).unwrap();
@@ -312,7 +312,7 @@ mod tests {
             self.key = Some(derive_material(&shared, &pnonce, &self.nonce, &self.public, &ppub).0);
             serde_json::json!({"companion_nonce": b64(&self.nonce)}).to_string().into_bytes()
         }
-        fn finish_reply(&self, cred: &[u8], machine: Option<&[u8]>) -> Vec<u8> {
+        pub(crate) fn finish_reply(&self, cred: &[u8], machine: Option<&[u8]>) -> Vec<u8> {
             let seal = |n: u8, msg: &[u8], aad: &[u8]| Aes256Gcm::new_from_slice(&self.key.unwrap()).unwrap().encrypt(Nonce::from_slice(&[n; 12]), Payload { msg, aad }).unwrap();
             let mut v = serde_json::json!({"credential_nonce": b64(&[1u8; 12]), "credential_ciphertext": b64(&seal(1, cred, self.hid.as_bytes()))});
             if let Some(m) = machine {

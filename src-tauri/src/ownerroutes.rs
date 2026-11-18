@@ -188,7 +188,7 @@ pub struct DesktopUpstream {
     pub llama_port: u16,
     pub key: Box<dyn Fn() -> Option<String> + Send + Sync>,
     #[cfg(unix)]
-    remote: crate::mini_remote::MiniRemote,
+    remote: Arc<crate::mini_remote::MiniRemote>,
 }
 impl DesktopUpstream {
     /// `state_dir` holds the pairing file of the remote machine.
@@ -199,8 +199,14 @@ impl DesktopUpstream {
             llama_port,
             key,
             #[cfg(unix)]
-            remote: crate::mini_remote::MiniRemote::new(state_dir),
+            remote: Arc::new(crate::mini_remote::MiniRemote::new(state_dir)),
         }
+    }
+
+    /// The same, sharing the remote group with the pairing driver, which resets it after a save or a forget (R6).
+    #[cfg(unix)]
+    pub fn with_remote(llama_port: u16, key: Box<dyn Fn() -> Option<String> + Send + Sync>, remote: Arc<crate::mini_remote::MiniRemote>) -> Self {
+        DesktopUpstream { llama_port, key, remote }
     }
 }
 impl Upstream for DesktopUpstream {
@@ -214,7 +220,7 @@ impl Upstream for DesktopUpstream {
     }
     fn remote_listing(&self) -> Option<String> {
         #[cfg(unix)]
-        return crate::mini_remote::RemoteListing::remote_listing(&self.remote);
+        return crate::mini_remote::RemoteListing::remote_listing(&*self.remote);
         #[cfg(not(unix))]
         None
     }

@@ -32,6 +32,8 @@ pub mod minicred;
 pub mod mini_pair;
 #[cfg(unix)]
 pub mod mini_remote;
+#[cfg(unix)]
+pub mod mini_driver;
 
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -734,7 +736,16 @@ pub fn run() {
             app.manage(Info { lan: Mutex::new(None), data_dir: Mutex::new(None), alias: Mutex::new(None), stale: Mutex::new(Vec::new()), fw_wait: Mutex::new(false), fw_none: Mutex::new(false), model_dir: model_dir.clone(), llama_port, llama_variant: llama_variant.clone(), model_tier: Mutex::new(None), fallback: Mutex::new(None), note: note_status.clone(), heal: Mutex::new(linuxrun::Heal::default()), found: Mutex::new(None), dl: Mutex::new(None), applying: Mutex::new(false), proofs: Arc::new(Mutex::new(models::Proofs::default())) });
             // The owner routes for a bar panel on this computer: loopback only, port from ARROWMEM_OWNER_PORT (default 8789).
             // A bind that fails (port taken) leaves the app as it was; no panel then, nothing else changes.
-            let _ = ownerroutes::start(ownerroutes::owner_port(std::env::var("ARROWMEM_OWNER_PORT").ok().as_deref()), ownerroutes::DesktopUpstream::new(llama_port, Box::new(llama_key), state_dir_now().unwrap_or_default()));
+            // The remote group is one shared handle: the pairing driver (mini_driver) resets it after a save or a forget (R6).
+            #[cfg(unix)]
+            let upstream = {
+                let remote = Arc::new(mini_remote::MiniRemote::new(state_dir_now().unwrap_or_default()));
+                app.manage(remote.clone());
+                ownerroutes::DesktopUpstream::with_remote(llama_port, Box::new(llama_key), remote)
+            };
+            #[cfg(not(unix))]
+            let upstream = ownerroutes::DesktopUpstream::new(llama_port, Box::new(llama_key), state_dir_now().unwrap_or_default());
+            let _ = ownerroutes::start(ownerroutes::owner_port(std::env::var("ARROWMEM_OWNER_PORT").ok().as_deref()), upstream);
             // The window asks for Info at once, so it opens only after Info is managed. Started by hand: show the home window; by the autostart entry: the tray only.
             if !started_in_background(&std::env::args().collect::<Vec<_>>()) {
                 open_window(app.handle(), "main", "home.html");
