@@ -46,7 +46,8 @@ mod tests {
         let out = Command::new(std::env::current_exe().unwrap())
             .args(["modelpick::tests::", "follow::tests::", "apikey::tests::", "minicred::tests::", "firstrun::tests::", "firewall::tests::",
                    "userunit::tests::", "uninstall::tests::", "linuxrun::tests::", "pairing::tests::",
-                   "supervisor::tests::", "models::tests::", "desktop::tests::", "mini_remote::tests::", "--test-threads=4"])
+                   "supervisor::tests::", "models::tests::", "desktop::tests::", "mini_remote::tests::",
+                   "autostart::tests::", "mesh::tests::", "ownerroutes::tests::", "--test-threads=4"])
             .env("TMPDIR", &*scratch)
             .output()
             .unwrap();
@@ -55,6 +56,27 @@ mod tests {
         assert!(text.contains("test result: ok.") && !text.contains(" 0 passed"), "inner run ran nothing: {text}");
         let left: Vec<_> = std::fs::read_dir(&*scratch).unwrap().map(|e| e.unwrap().file_name()).collect();
         assert!(left.is_empty(), "temp folders left behind: {left:?}");
+    }
+
+    /// Lines that call `temp_dir` directly. Every test folder goes through the guard so a failing test cannot leak one.
+    fn direct_temp_dir_calls(text: &str) -> Vec<usize> {
+        text.lines().enumerate().filter(|(_, l)| l.contains("env::temp_dir()") && !l.trim_start().starts_with("//")).map(|(i, _)| i + 1).collect()
+    }
+
+    #[test]
+    fn no_source_file_calls_temp_dir_directly_and_the_scan_catches_a_plant() {
+        let mut hits = Vec::new();
+        for e in std::fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/src")).unwrap() {
+            let p = e.unwrap().path();
+            if p.extension().is_some_and(|x| x == "rs") && p.file_name().is_some_and(|n| n != "testtmp.rs") {
+                for l in direct_temp_dir_calls(&std::fs::read_to_string(&p).unwrap()) {
+                    hits.push(format!("{}:{l}", p.file_name().unwrap().to_string_lossy()));
+                }
+            }
+        }
+        assert!(hits.is_empty(), "direct temp_dir calls (use testtmp::TmpDir): {hits:?}");
+        assert_eq!(direct_temp_dir_calls("fn a() {}\nlet d = std::env::temp_dir().join(\"x\");\n"), vec![2], "a planted call must be caught");
+        assert!(direct_temp_dir_calls("// std::env::temp_dir() in a comment\n").is_empty());
     }
 
     #[test]

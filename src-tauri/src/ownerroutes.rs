@@ -666,7 +666,8 @@ mod tests {
 
     /// A state dir with no pairing file: the remote group reads unknown.
     fn unpaired() -> std::path::PathBuf {
-        std::env::temp_dir().join(format!("owner-unpaired-{}", std::process::id()))
+        // never created, so nothing to remove; the guard only names the folder under TMPDIR
+        crate::testtmp::TmpDir::absent("owner-unpaired").to_path_buf()
     }
 
     // ---- the llama key ----

@@ -328,7 +328,16 @@ fn a_bad_model_id_sends_nothing() {
 
 #[test]
 fn the_binary_prints_one_line_exits_zero_and_creates_no_file() {
-    let dir = std::env::temp_dir().join(format!("abp-nofile-{}", std::process::id()));
+    /// Removes the folder on drop, also while a failing assertion unwinds (this crate cannot reach the desktop's testtmp guard).
+    struct Dir(std::path::PathBuf);
+    impl Drop for Dir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    let guard = Dir(std::env::temp_dir().join(format!("abp-nofile-{}", std::process::id())));
+    let dir = guard.0.clone();
+    let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let port = TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port().to_string();
     for a in [vec!["list", "--owner-port", &port], vec!["pause", "--owner-port", &port, "--model", "a"], vec![]] {
@@ -339,7 +348,6 @@ fn the_binary_prints_one_line_exits_zero_and_creates_no_file() {
         assert!(o.stderr.is_empty());
     }
     assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
-    std::fs::remove_dir(&dir).unwrap();
 }
 
 fn writes_to_disk(src: &str) -> bool {

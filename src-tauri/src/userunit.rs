@@ -460,8 +460,7 @@ mod tests {
 
     #[test]
     fn a_process_running_a_replaced_file_is_found_through_proc() {
-        let d = std::env::temp_dir().join(format!("userunit-proc-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
+        let d = crate::testtmp::TmpDir::absent("userunit-proc");
         std::fs::create_dir_all(d.join("4242")).unwrap();
         std::fs::create_dir_all(d.join("4343")).unwrap();
         std::os::unix::fs::symlink("/usr/lib/arrowmem/arrowbridge-companion (deleted)", d.join("4242/exe")).unwrap();
@@ -469,7 +468,6 @@ mod tests {
         assert!(pid_runs_deleted_exe(&d, 4242));
         assert!(!pid_runs_deleted_exe(&d, 4343));
         assert!(!pid_runs_deleted_exe(&d, 9999), "no such process: not stale");
-        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

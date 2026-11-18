@@ -216,8 +216,7 @@ mod tests {
     #[test]
     fn token_file_mode_and_shape() {
         use std::os::unix::fs::PermissionsExt;
-        let d = std::env::temp_dir().join(format!("mesh-tok-{}", std::process::id()));
-        std::fs::create_dir_all(&d).unwrap();
+        let d = crate::testtmp::TmpDir::new("mesh-tok");
         let p = d.join("api-token");
         std::fs::write(&p, "ab".repeat(32)).unwrap();
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644)).unwrap();
@@ -227,15 +226,13 @@ mod tests {
         std::fs::write(&p, "zz").unwrap();
         assert_eq!(read_token(&p), Err("no_token"));
         assert_eq!(read_token(&d.join("none")), Err("no_token"));
-        std::fs::remove_dir_all(&d).ok();
     }
 
     /// One request against a throwaway loopback server: the Host is the IP literal, the bearer is sent, the body arrives, a 401 is data not an error.
     #[test]
     fn request_carries_ip_host_and_bearer_and_errors_are_replies() {
         use std::os::unix::fs::PermissionsExt;
-        let d = std::env::temp_dir().join(format!("mesh-req-{}", std::process::id()));
-        std::fs::create_dir_all(&d).unwrap();
+        let d = crate::testtmp::TmpDir::new("mesh-req");
         let tf = d.join("api-token");
         std::fs::write(&tf, "cd".repeat(32)).unwrap();
         std::fs::set_permissions(&tf, std::fs::Permissions::from_mode(0o600)).unwrap();
@@ -274,14 +271,12 @@ mod tests {
         assert!(seen[0].contains("{\"passphrase\":\"x\"}"));
         assert_eq!(call(&t, "GET", "/v1/vault/export", None), Err("bad_route")); // mesh_call still cannot fetch ciphertext
         assert_eq!(call(&t, "POST", "/v1/chat", None), Err("bad_body"));
-        std::fs::remove_dir_all(&d).ok();
     }
 
     #[test]
     fn nothing_listening_is_unreachable() {
         use std::os::unix::fs::PermissionsExt;
-        let d = std::env::temp_dir().join(format!("mesh-dead-{}", std::process::id()));
-        std::fs::create_dir_all(&d).unwrap();
+        let d = crate::testtmp::TmpDir::new("mesh-dead");
         let tf = d.join("api-token");
         std::fs::write(&tf, "ef".repeat(32)).unwrap();
         std::fs::set_permissions(&tf, std::fs::Permissions::from_mode(0o600)).unwrap();
@@ -289,7 +284,6 @@ mod tests {
         let addr = l.local_addr().unwrap();
         drop(l);
         assert_eq!(call(&Target { addr, token_file: tf }, "GET", "/v1/status", None), Err("unreachable"));
-        std::fs::remove_dir_all(&d).ok();
     }
 
     #[test]
@@ -309,8 +303,7 @@ mod tests {
     #[test]
     fn export_returns_raw_bytes_and_423_is_a_status() {
         use std::os::unix::fs::PermissionsExt;
-        let d = std::env::temp_dir().join(format!("mesh-exp-{}", std::process::id()));
-        std::fs::create_dir_all(&d).unwrap();
+        let d = crate::testtmp::TmpDir::new("mesh-exp");
         let tf = d.join("api-token");
         std::fs::write(&tf, "ef".repeat(32)).unwrap();
         std::fs::set_permissions(&tf, std::fs::Permissions::from_mode(0o600)).unwrap();
@@ -342,6 +335,5 @@ mod tests {
         let (st2, b2) = call_export(&t).unwrap();
         assert_eq!((st2, b2.len()), (423, 0));
         h.join().unwrap();
-        std::fs::remove_dir_all(&d).ok();
     }
 }

@@ -77,8 +77,7 @@ mod tests {
 
     #[test]
     fn write_and_remove_in_temp_dir() {
-        let d = std::env::temp_dir().join(format!("amd-autostart-test-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
+        let d = crate::testtmp::TmpDir::absent("amd-autostart-test");
         let dir = d.join("autostart");
         let p = write_autostart(&dir, "/usr/bin/arrowmem-desktop").unwrap();
         assert_eq!(p, dir.join("arrowmem-desktop.desktop"));
@@ -86,6 +85,5 @@ mod tests {
         remove_autostart(&dir).unwrap();
         assert!(!p.exists());
         remove_autostart(&dir).unwrap(); // idempotent
-        let _ = std::fs::remove_dir_all(&d);
     }
 }
