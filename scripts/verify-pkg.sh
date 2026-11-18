@@ -50,7 +50,7 @@ leak_scan() {
       n="$(grep -a -c -i -w -F -- "$host" "$f" || :)"
       [ "$n" = 0 ] || echo "LEAK: $r: the build host's name as a word on $n line(s)"
     fi
-    # The daemon is not in 0.1.1: no packaged file may carry its name (a stand-in stub or the real binary) until a daemon round adds both the install line and a test.
+    # The daemon is not in this release: no packaged file may carry its name (a stand-in stub or the real binary) until a daemon round adds both the install line and a test.
     case "$r" in *[Aa][Rr][Rr][Oo][Ww][Mm][Ee][Ss][Hh]*) echo "LEAK: $r: an arrowmesh file is in the package, which does not ship the daemon";; esac
     # The build stage folder (build-clean-pkg.sh) belongs in the two .BUILDINFO lines builddir and startdir and nowhere else. A dev build
     # of this script would embed it, and unlike the src-tauri marker below it does not depend on the byte that follows.

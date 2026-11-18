@@ -27,7 +27,7 @@ FOUND="$(sha256sum "$FREEZE_SRC" | cut -d' ' -f1)"
 [ "$FOUND" = "$PIN" ] || { echo "refusing: companion sha256 $FOUND is not the pin $PIN" >&2; exit 2; }
 FREEZE="$STAGE/src/src-tauri/binaries/arrowbridge-companion-x86_64-unknown-linux-gnu"
 cp -a "$FREEZE_SRC" "$FREEZE"
-# tauri-build requires every externalBin file to exist; tauri.conf.json lists only what ships (the daemon is not in 0.1.1), so no stand-in file is made.
+# tauri-build requires every externalBin file to exist; tauri.conf.json lists only what ships (the daemon is not in this release), so no stand-in file is made.
 echo "freeze $(sha256sum "$FREEZE" | cut -d' ' -f1) $(stat -c %s "$FREEZE") bytes (the pin)"
 # 2. the app, no home path in it
 export CARGO_TARGET_DIR="$STAGE/target"

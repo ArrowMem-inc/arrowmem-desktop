@@ -5,7 +5,7 @@ CA_MARK = "[CA]"  # the bracketed word of a render whose copy the copy reviewer 
 MARKS = (MARK, CA_MARK)
 # Empty since sec 331: every placeholder has its cleared line.
 NO_LINE = set()
-# The Arrowmesh pages still carry uncleared "[CA]" words. 0.1.1 has no way to open them: the tray item is gone and
+# The Arrowmesh pages still carry uncleared "[CA]" words. this release has no way to open them: the tray item is gone and
 # open_window is never called with the mesh window (checked below). Remove this set when the copy is cleared.
 NOT_RENDERED = {"ui/mesh-chat.html", "ui/mesh-peers.html", "ui/mesh-status.html", "ui/mesh-vault.html", "ui/mesh.js"}
 
