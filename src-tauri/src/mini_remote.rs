@@ -427,7 +427,8 @@ pub(crate) mod tests {
     }
 
     // 6. the source guard: no log call anywhere, no write outside the credential store
-    const SHIPPED: [(&str, &str); 4] = [
+    const SHIPPED: [(&str, &str); 5] = [
+        ("mini_driver.rs", include_str!("mini_driver.rs")),
         ("sealed.rs", include_str!("sealed.rs")),
         ("minicred.rs", include_str!("minicred.rs")),
         ("mini_pair.rs", include_str!("mini_pair.rs")),
@@ -435,7 +436,7 @@ pub(crate) mod tests {
     ];
 
     fn shipped(text: &str) -> &str {
-        text.split("#[cfg(test)]\nmod tests").next().unwrap()
+        text.split("#[cfg(test)]\nmod tests").next().unwrap().split("#[cfg(test)]\npub(crate) mod tests").next().unwrap()
     }
 
     /// Violations in shipped (non test) text: any print or log call, and any disk write outside minicred.rs.
