@@ -746,9 +746,19 @@ mod tests {
 
     #[test]
     fn free_port_is_high_and_bindable() {
-        let p = free_port().unwrap();
-        assert!(p > 1024);
-        std::net::TcpListener::bind(("127.0.0.1", p)).unwrap();
+        // free_port releases the port before the caller binds it, so another process (parallel cargo runs on one machine share its ports) can take it in
+        // between: that made this test fail with AddrInUse now and then. Every answer must be high; at least one of five must bind. A port that is never
+        // bindable still fails all five.
+        let mut bound = false;
+        for _ in 0..5 {
+            let p = free_port().unwrap();
+            assert!(p > 1024, "port {p} is not high");
+            if std::net::TcpListener::bind(("127.0.0.1", p)).is_ok() {
+                bound = true;
+                break;
+            }
+        }
+        assert!(bound, "five free_port answers in a row were not bindable");
     }
 
     /// Supervisor path with a stub standing in for llama-server (a script that honours --host/--port and answers

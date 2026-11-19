@@ -6,6 +6,7 @@ pub mod factguard;
 pub mod linkgate;
 pub mod packsafety;
 mod patterns_gen;
+mod patterns_pet_gen;
 mod pyjson;
 mod rx;
 pub use rx::Rx;

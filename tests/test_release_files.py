@@ -15,6 +15,9 @@ class Files(unittest.TestCase):
         lock = re.search(r'name = "arrowmem-desktop"\nversion = "([^"]+)"', open(os.path.join(R, "src-tauri", "Cargo.lock")).read()).group(1)
         pkg = re.search(r"(?m)^pkgver=(\S+)", open(os.path.join(R, "packaging", "arch", "PKGBUILD")).read()).group(1)
         self.assertEqual({conf, toml, lock, pkg}, {"0.1.2"})
+        # the package release number moves with each test build, so two builds never share the string 0.1.2-1
+        rel = re.search(r"(?m)^pkgrel=(\S+)", open(os.path.join(R, "packaging", "arch", "PKGBUILD")).read()).group(1)
+        self.assertEqual(rel, "2")
 
     def test_sign_script_prints_a_command_and_reads_no_key(self):
         p = os.path.join(R, "scripts", "sign-release.sh")

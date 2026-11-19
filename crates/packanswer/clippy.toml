@@ -1,0 +1,41 @@
+# The gate is: cargo clippy --lib --offline --locked -- -D warnings. No socket type, no process spawn, no file write in the library.
+disallowed-types = [
+    { path = "std::net::TcpStream", reason = "the crate has no network" },
+    { path = "std::net::TcpListener", reason = "the crate has no network" },
+    { path = "std::net::UdpSocket", reason = "the crate has no network" },
+    { path = "std::os::unix::net::UnixStream", reason = "the crate has no sockets" },
+    { path = "std::os::unix::net::UnixListener", reason = "the crate has no sockets" },
+    { path = "std::os::unix::net::UnixDatagram", reason = "the crate has no sockets" },
+]
+disallowed-methods = [
+    { path = "std::process::Command::new", reason = "the crate spawns nothing" },
+    { path = "std::fs::write", reason = "the crate writes nothing" },
+    { path = "std::fs::File::create", reason = "the crate writes nothing" },
+    { path = "std::io::stdout", reason = "a question must never reach stdout" },
+    { path = "std::io::stderr", reason = "a question must never reach stderr" },
+    { path = "std::fs::copy", reason = "the crate writes nothing" },
+    { path = "std::fs::hard_link", reason = "the crate writes nothing" },
+    { path = "std::os::unix::fs::symlink", reason = "the crate writes nothing" },
+    { path = "std::fs::OpenOptions::write", reason = "the crate opens files read only" },
+    { path = "std::fs::OpenOptions::append", reason = "the crate opens files read only" },
+    { path = "std::fs::OpenOptions::create", reason = "the crate opens files read only" },
+    { path = "std::fs::OpenOptions::create_new", reason = "the crate opens files read only" },
+    { path = "std::fs::OpenOptions::truncate", reason = "the crate opens files read only" },
+    { path = "std::fs::File::create_new", reason = "the crate writes nothing" },
+    { path = "std::fs::rename", reason = "the crate writes nothing" },
+    { path = "std::fs::remove_file", reason = "the crate writes nothing" },
+    { path = "std::fs::create_dir_all", reason = "the crate writes nothing" },
+    { path = "std::fs::create_dir", reason = "the crate writes nothing" },
+    { path = "std::fs::remove_dir", reason = "the crate writes nothing" },
+    { path = "std::fs::remove_dir_all", reason = "the crate writes nothing" },
+    { path = "std::fs::set_permissions", reason = "the crate writes nothing" },
+]
+disallowed-macros = [
+    { path = "std::assert", reason = "its panic message reaches stderr" },
+    { path = "std::assert_eq", reason = "its panic message reaches stderr" },
+    { path = "std::assert_ne", reason = "its panic message reaches stderr" },
+    { path = "std::debug_assert", reason = "its panic message reaches stderr" },
+    { path = "std::debug_assert_eq", reason = "its panic message reaches stderr" },
+    { path = "std::debug_assert_ne", reason = "its panic message reaches stderr" },
+    { path = "std::unreachable", reason = "its panic message reaches stderr" },
+]

@@ -2,12 +2,15 @@
 //! Returns the fixed line and whether the 988 line must go with it, or None to let the turn reach the model. Never calls a model, never logs or keeps which
 //! phrase matched.
 use super::patterns_gen as p;
+use super::patterns_pet_gen as pp;
 use super::rx::Rx;
 use super::distress;
+use std::borrow::Cow;
 use std::sync::OnceLock;
 
 struct Pats {
     en: Rx, fr: Rx, walkback: Rx, od: Rx, info: Rx, near_person: Rx, intent_before: Rx, ingest: Rx, drowsy: Rx, pet_case: Rx, person_exposed: Rx, toxic: Rx, pet_swallowed: Rx,
+    pet_dose: Rx, self_intent: Rx, person_noposs: Rx,
 }
 
 fn pats() -> &'static Pats {
@@ -16,6 +19,7 @@ fn pats() -> &'static Pats {
         en: Rx::new(&p::URGENT_EN), fr: Rx::new(&p::URGENT_FR), walkback: Rx::new(&p::WALKBACK), od: Rx::new(&p::OD), info: Rx::new(&p::INFO),
         near_person: Rx::new(&p::NEAR_PERSON), intent_before: Rx::new(&p::INTENT_BEFORE), ingest: Rx::new(&p::INGEST), drowsy: Rx::new(&p::DROWSY),
         pet_case: Rx::new(&p::PET_CASE), person_exposed: Rx::new(&p::PERSON_EXPOSED), toxic: Rx::new(&p::TOXIC), pet_swallowed: Rx::new(&p::PET_SWALLOWED),
+        pet_dose: Rx::new(&pp::PET_DOSE), self_intent: Rx::new(&pp::SELF_INTENT), person_noposs: Rx::new(&pp::PERSON_NOPOSS),
     })
 }
 
@@ -63,8 +67,28 @@ fn ingestion(message: &str, prior: &[&str]) -> bool {
     yes(&q.ingest, &joined)
 }
 
+/// The fixed line a person in an emergency reads. A closed type: no public constructor, no `From`, no `Default`, no serde, no `DerefMut`.
+/// Only this module builds one, from a cleared constant or from the 911 line then the vet line joined by a blank line (the web gate's join), so a caller
+/// cannot put runtime text (model output, an empty string) where the crisis line goes. Tests: tests/crisis_line.rs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CrisisLine(Cow<'static, str>);
+
+impl CrisisLine {
+    fn constant(line: &'static str) -> Self { Self(Cow::Borrowed(line)) }
+    fn person_then_vet(person: &'static str, vet: &'static str) -> Self { Self(Cow::Owned(format!("{person}\n\n{vet}"))) }
+}
+
+impl std::ops::Deref for CrisisLine {
+    type Target = str;
+    fn deref(&self) -> &str { &self.0 }
+}
+
+impl std::fmt::Display for CrisisLine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str(&self.0) }
+}
+
 #[derive(Debug, PartialEq, Eq)]
-pub struct Reply { pub line: &'static str, pub self_harm: bool }
+pub struct Reply { pub line: CrisisLine, pub self_harm: bool }
 
 fn is_fr(lang: &str) -> bool { lang.starts_with("fr") }
 
@@ -73,7 +97,16 @@ pub fn urgent_reply(user_texts: &[&str], lang: &str, d: Distress) -> Option<Repl
     let prior: &[&str] = if rest.is_empty() { &[] } else { &rest[rest.len() - 1..] };
     let q = pats();
     if animal(message) {
-        return Some(Reply { line: if is_fr(lang) { p::ANIMAL_LINE_FR } else { p::ANIMAL_LINE_EN }, self_harm: false });
+        let (vet, person) = if is_fr(lang) { (p::ANIMAL_LINE_FR, p::URGENT_LINE_FR) } else { (p::ANIMAL_LINE_EN, p::URGENT_LINE_EN) };
+        // The person's own urgent words (an overdose word is the self harm cue, which the companion reads through
+        // `blank_overdose`) put the 911 line first with the vet line beside it. A give-up counts as urgent words: the more help side.
+        // The pet's own matched words are blanked first, so "my cat swallowed pills" keeps the vet line alone.
+        let blanked = blank_overdose(message);
+        let t = q.od.replace_all(&blanked, " ");
+        let t = q.pet_swallowed.replace_all(&q.pet_case.replace_all(&t, " "), " ");
+        let line = if yes(&q.en, &t) || yes(&q.fr, &t) { CrisisLine::person_then_vet(person, vet) } else { CrisisLine::constant(vet) };
+        // The 988 bit rides on the Reply for the animal branch too, as the web gate (mvf_urgent.urgent_reply): Missing gives true.
+        return Some(Reply { line, self_harm: self_harm(&blanked, d) });
     }
     let ingest = ingestion(message, prior);
     let urgent_now = is_urgent(message, d) || ingest;
@@ -85,8 +118,15 @@ pub fn urgent_reply(user_texts: &[&str], lang: &str, d: Distress) -> Option<Repl
         (true, true) => p::INGEST_LINE_FR, (true, false) => p::INGEST_LINE_EN,
         (false, true) => p::URGENT_LINE_FR, (false, false) => p::URGENT_LINE_EN,
     };
-    Some(Reply { line, self_harm: self_harm(message, d) || (walked_back && self_harm(prior[0], d)) })
+    Some(Reply { line: CrisisLine::constant(line), self_harm: self_harm(message, d)|| (walked_back && self_harm(prior[0], d)) })
 }
 
-/// Python: `mvf_urgent._OD.sub(" ", text)`, the overdose word blanked (the companion decides distress for an animal message with it).
-pub fn blank_overdose(text: &str) -> String { pats().od.replace_all(text, " ") }
+/// The text with the overdose word blanked only inside the pet dose clause (the companion decides distress for an animal message with it).
+/// Never message wide, and not at all when the person states an intent or names themselves beside the overdose word
+/// (a give-up counts as either, the more help side).
+/// Python: `t = message if (_SELF_INTENT.search(message) or _PERSON_NOPOSS.search(message)) else _PET_DOSE.sub(lambda m: _OD.sub(" ", m.group()), message)`.
+pub fn blank_overdose(text: &str) -> String {
+    let q = pats();
+    if yes(&q.self_intent, text) || yes(&q.person_noposs, text) { return text.to_string(); }
+    q.pet_dose.sub_with(text, |h| q.od.replace_all(h.whole, " ")).unwrap_or_else(|| text.to_string())
+}

@@ -1,0 +1,12 @@
+[package]
+name = "packanswer"
+version = "0.1.0"
+edition = "2021"
+description = "Reference only offline pack answering: returns verbatim pack records with their source, never authored text. No network, no writes."
+publish = false
+
+[dependencies]
+arrowbridge = { path = "../arrowbridge" }
+serde_json = "1"
+sha2 = "0.10"
+libc = "0.2"

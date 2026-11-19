@@ -8,7 +8,7 @@
 # `cargo build --release --locked --features custom-protocol` in src-tauri (the feature is required: without it the binary is a Tauri dev build), then run makepkg in this directory.
 pkgname=arrowmem-desktop
 pkgver=0.1.2
-pkgrel=1
+pkgrel=2
 pkgdesc="ArrowMem home machine app"
 arch=('x86_64')
 url="https://arrowmem.ca"

@@ -1,0 +1,31 @@
+{
+"patterns": {
+"_PET_DOSE": "\\b(?:(?:lethal|fatal|deadly)\\W++)?(?:overdos\\w*|surdose|dose|poison\\w*|empoisonn\\w*|toxic|toxique|how (?:much|many)|combien)\\W++(?:\\w++(?:'\\w++)?\\W++){0,6}?(?:a|an|my|the|our|for|to|un|une|mon|ma|notre|pour)\\W++(?:\\w++(?:'\\w++)?\\W++)?(?:dog|dogs|puppy|pup|cat|cats|kitten|pet|horse|rabbit|bunny|ferret|parrot|bird|hamster|guinea pig|chien\\w*|chiot|chat|chats|chaton|animal|lapin|cheval|oiseau)\\b",
+"_SELF_INTENT": "\\b(?:want|wanna|going to|gonna|plan|planning|thinking|considering|about to|veux|voudrais|vais|pense [\\u00e0a])\\b\\W++(?:\\w++(?:'\\w++)?\\W++){0,4}?(?:overdos\\w*|surdoses?|(?:lethal|fatal|deadly)\\W+(?:dose|amount|quantity)s?|(?:dose|quantit[\\u00e9e])s?\\W+(?:l[\\u00e9e]tales?|mortelles?|fatales?))\\b",
+"_PERSON_NOPOSS": "\\b(?:i|i'm|im|i've|ive|me|he|she|he's|she's|they|they're|we|someone|somebody|friend|mother|father|brother|sister|son|daughter|partner|wife|husband|kid|child|baby|patient|je|j|moi|il|elle|ils|elles|nous|quelqu'un|ami|amie|m[\\u00e8e]re|p[\\u00e8e]re|fr[\\u00e8e]re|s[\\u0153o]e?ur|fils|fille|enfant)\\b\\W++(?:\\w++(?:'\\w++)?\\W++){0,3}?(?:overdos\\w*|surdoses?|(?:lethal|fatal|deadly)\\W+(?:dose|amount|quantity)s?|(?:dose|quantit[\\u00e9e])s?\\W+(?:l[\\u00e9e]tales?|mortelles?|fatales?))\\b|\\b(?:overdos\\w*|surdoses?|(?:lethal|fatal|deadly)\\W+(?:dose|amount|quantity)s?|(?:dose|quantit[\\u00e9e])s?\\W+(?:l[\\u00e9e]tales?|mortelles?|fatales?))\\W++(?:\\w++(?:'\\w++)?\\W++){0,3}?(?:i|i'm|im|i've|ive|me|he|she|he's|she's|they|they're|we|someone|somebody|friend|mother|father|brother|sister|son|daughter|partner|wife|husband|kid|child|baby|patient|je|j|moi|il|elle|ils|elles|nous|quelqu'un|ami|amie|m[\\u00e8e]re|p[\\u00e8e]re|fr[\\u00e8e]re|s[\\u0153o]e?ur|fils|fille|enfant)\\b"
+},
+"vectors": [
+{"text": "the dog ate my pills and now I want to overdose", "lang": "en_ca", "line": "A", "sh": true},
+{"text": "the dog ate my pills, I am going to overdose too", "lang": "en_ca", "line": "A", "sh": true},
+{"text": "I want to overdose and my dog ate pills", "lang": "en_ca", "line": "A", "sh": true},
+{"text": "my dog ate chocolate and I want to kill myself", "lang": "en_ca", "line": "A", "sh": true},
+{"text": "how many naproxen would overdose a dog", "lang": "en_ca", "line": "A", "sh": false},
+{"text": "how much ibuprofen is an overdose for a dog", "lang": "en_ca", "line": "A", "sh": false},
+{"text": "what is a lethal dose of chocolate for my dog", "lang": "en_ca", "line": "A", "sh": false},
+{"text": "my dog ate my pills", "lang": "en_ca", "line": "A", "sh": false},
+{"text": "my dog ate chocolate and my chest hurts", "lang": "en_ca", "line": "UA", "sh": false},
+{"text": "my dog ate chocolate and I can't breathe", "lang": "en_ca", "line": "UA", "sh": false},
+{"text": "my dog ate chocolate and my chest hurts", "lang": "fr_ca", "line": "UA", "sh": false},
+{"text": "my dog ate chocolate and my chest hurts and I want to kill myself", "lang": "en_ca", "line": "UA", "sh": true},
+{"text": "I will overdose and my dog ate my pills", "lang": "en_ca", "line": "A", "sh": true},
+{"text": "I need to overdose, my dog ate chocolate", "lang": "en_ca", "line": "A", "sh": true},
+{"text": "I should just overdose, my cat ate a lily", "lang": "en_ca", "line": "A", "sh": true},
+{"text": "I'm ready to overdose, the dog ate my pills", "lang": "en_ca", "line": "A", "sh": true},
+{"text": "I might overdose tonight, my dog ate my meds", "lang": "en_ca", "line": "A", "sh": true},
+{"text": "I'm overdosing right now and my dog ate some of the pills", "lang": "en_ca", "line": "A", "sh": true},
+{"text": "how many of these pills would be an overdose for me and my dog", "lang": "en_ca", "line": "A", "sh": true},
+{"text": "my cat swallowed pills", "lang": "en_ca", "line": "A", "sh": false},
+{"text": "my dog ate chocolate and is not breathing", "lang": "en_ca", "line": "UA", "sh": false},
+{"text": "mon chien a mange du chocolat et j'ai mal a la poitrine", "lang": "fr_ca", "line": "UA", "sh": false, "rust_line": "A"}
+]
+}

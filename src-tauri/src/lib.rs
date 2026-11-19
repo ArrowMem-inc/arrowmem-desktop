@@ -178,8 +178,12 @@ fn linux_sync(l: &LlamaLauncher, app: &tauri::AppHandle, data_dir: &std::path::P
     };
     match linuxrun::sync(std::path::Path::new("/usr/bin/systemctl"), &dir, &p, lan.map(|(ip, _)| ip)) {
         Ok(linuxrun::LanState::Lan(_)) => {
-            // End of the first install: the one elevated prompt (firewall), then the pair window.
-            let fi = pairing::first_install(data_dir, lan, std::path::Path::new("/usr/bin/pkexec"), std::path::Path::new(firewall::HELPER_PATH));
+            // Networks with a recorded rule other than the one up now are stale after a restart too; the window's button withdraws them.
+            let up = lan.and_then(|(ip, mask)| firewall::cidr_from(ip, mask).ok());
+            *app.state::<Info>().stale.lock().unwrap() = firewall::recorded_cidrs(data_dir).into_iter().filter(|c| Some(c) != up.as_ref()).collect();
+            // End of the first install, or the first start after an upgrade from 0.1.2 (its old rule is replaced in the same prompt): the one elevated prompt
+            // (firewall), then the pair window.
+            let fi = pairing::first_install(data_dir, lan, &linuxrun::list_ipv4(), std::path::Path::new("/usr/bin/pkexec"), std::path::Path::new(firewall::HELPER_PATH));
             if fi.open_pair_window {
                 open_window(app, "main", "home.html");
             }
@@ -518,12 +522,13 @@ fn retry_firewall(info: tauri::State<Info>) -> Result<String, String> {
     let r = {
         let before = info.stale.lock().unwrap().clone();
         let mut stale = before.clone();
-        let r = follow::press_button(&mut stale, lan, &|l| pairing::retry_firewall(&dir, Some(l), pkexec, helper), &|c| firewall::remove_for(pkexec, helper, c));
+        let ifaces = linuxrun::list_ipv4();
+        let r = follow::press_button(&mut stale, lan, &|l| pairing::retry_firewall(&dir, Some(l), &ifaces, pkexec, helper), &|c| firewall::remove_for(pkexec, helper, &dir, c));
         follow::merge_stale(&mut info.stale.lock().unwrap(), &before, &stale); // merged, not replaced (review N2)
         r?
     };
     #[cfg(not(target_os = "linux"))]
-    let r = pairing::retry_firewall(&dir, lan, pkexec, helper)?;
+    let r = pairing::retry_firewall(&dir, lan, &[], pkexec, helper)?;
     *info.fw_none.lock().unwrap() = r == firewall::FwOutcome::NoFirewall;
     if matches!(r, firewall::FwOutcome::Done | firewall::FwOutcome::NoFirewall) {
         *info.fw_wait.lock().unwrap() = false;

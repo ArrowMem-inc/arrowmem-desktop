@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 # Root helper for the ArrowBridge firewall rule. Installed read-only and owned by root; run via pkexec.
 # Commands, and only these:
-#   allow <cidr>   allow TCP 8788 from one private network (/16 to /30), tagged with the comment "arrowbridge"
-#   remove         delete exactly the rules carrying that comment (uninstall)
-#   remove <cidr>  delete only the tagged rules whose source is exactly that network (the app withdraws a network it left)
-# Exit codes: 0 done, 2 bad usage or bad CIDR, 3 ufw missing or inactive (nothing changed), 4 ufw failed.
-HELPER_VERSION=2
+#   allow <iface> <cidr> <bound_ip>   allow TCP 8788 IN on one interface, from one private network (/16 to /30), to the one address the companion is
+#                                     bound to, tagged with the comment "arrowbridge" (a home subnet and a hotspot subnet can
+#                                     collide; scoping the rule to the interface removes that)
+#   remove                            delete exactly the rules carrying that comment (uninstall)
+#   remove <iface> <cidr> <bound_ip> delete the one rule the app allowed, by its rule spec (never by number): the same interface, network and bound
+#                                     address the allow named (the app withdraws a network it left)
+#   replace <iface> <cidr> <bound_ip> delete every rule carrying that comment, then add the scoped allow above, in one run (the upgrade from 0.1.2)
+# Every run takes one lock first, so two runs never interleave their ufw calls.
+# Exit codes: 0 done, 2 bad usage or bad CIDR, interface or address, 3 ufw missing or inactive (nothing changed), 4 ufw failed.
+HELPER_VERSION=5
 set -u
 # Fixed environment: pkexec already scrubs it, this makes it true however the helper is started. A translated
 # "inactive" would break the status parse, so the locale is forced to C.
@@ -13,10 +18,20 @@ PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 export LC_ALL=C
 UFW=/usr/sbin/ufw
+LOCK=/run/arrowbridge-fw.lock
 PORT=8788
 TAG=arrowbridge
 
 die() { exit "$1"; }
+
+# A canonical dotted quad (no leading zeros, each part at most 255) as one integer on stdout.
+quad_int() {
+  local re='^(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})$'
+  [[ "$1" =~ $re ]] || return 1
+  local a=${BASH_REMATCH[1]} b=${BASH_REMATCH[2]} c=${BASH_REMATCH[3]} d=${BASH_REMATCH[4]}
+  (( a <= 255 && b <= 255 && c <= 255 && d <= 255 )) || return 1
+  echo $(( (a << 24) | (b << 16) | (c << 8) | d ))
+}
 
 # One RFC1918 network, prefix 16..30, no leading zeros, address must be the network address.
 valid_cidr() {
@@ -35,6 +50,27 @@ valid_cidr() {
   return 0
 }
 
+# A Linux interface name as the kernel allows it: 1 to 15 characters of letters, digits and _ . : -, the first a letter or digit.
+valid_iface() { [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9_.:-]{0,14}$ ]]; }
+
+# The address the companion is bound to: a canonical dotted quad that lies inside the (already validated) network $2.
+valid_bound() {
+  local ip net p mask
+  ip=$(quad_int "$1") || return 1
+  net=$(quad_int "${2%/*}") || return 1
+  p=${2#*/}
+  mask=$(( (0xFFFFFFFF << (32 - p)) & 0xFFFFFFFF ))
+  (( (ip & mask) == net ))
+}
+
+# One run at a time, root-owned lock under /run, held until this process exits. A run that cannot get it in 60 seconds fails (4), never proceeds.
+take_lock() {
+  umask 077
+  exec 9>"$LOCK" || die 4
+  chmod 600 "$LOCK" || die 4   # a lock file left by an earlier run keeps its old mode; flock needs only read access, so a 0644 file lets any user hold it
+  flock -w 60 9 || die 4
+}
+
 ufw_active() {
   [ -x "$UFW" ] || return 1
   local s
@@ -42,45 +78,83 @@ ufw_active() {
   [[ "$s" =~ ^Status:\ active ]]
 }
 
+iface=""; want=""; bound=""
+re='^\[[[:space:]]*([0-9]+)\][[:space:]](.*)[[:space:]]#[[:space:]]'"$TAG"'[[:space:]]*$'
+tagged() {  # prints tagged rule numbers, highest first; with an interface and a CIDR, only rules on exactly that interface whose source equals it exactly
+  local line num body from to
+  while IFS= read -r line; do
+    if [[ "$line" =~ $re ]]; then
+      num="${BASH_REMATCH[1]}"; body="${BASH_REMATCH[2]}"
+      if [ -n "$want" ]; then
+        # Whole-string compares of the source column and of the "on <iface>" tail of the to column (never a substring: 10.0.0.0/16 is not
+        # 10.0.0.0/24, and wlan0 is not wlan01 or awlan0).
+        [[ "$body" == *"ALLOW IN"* ]] || continue
+        from="${body##*ALLOW IN}"
+        from="${from#"${from%%[![:space:]]*}"}"
+        from="${from%"${from##*[![:space:]]}"}"
+        [ "$from" = "$want" ] || continue
+        to="${body%%ALLOW IN*}"
+        to="${to%"${to##*[![:space:]]}"}"
+        [[ "$to" == *" on $iface" ]] || continue
+        [[ "$to" == "$bound "* ]] || continue   # the to column starts with the bound address
+      fi
+      echo "$num"
+    fi
+  done < <("$UFW" status numbered 2>/dev/null) | sort -rn
+}
+
+# Deletes every tagged rule by number (the rule is not known by spec): each delete uses a number from a listing read just before it, confirmed by a second
+# read, because the numbers shift after each delete. Only with $want empty.
+sweep_all() {
+  local guard n
+  for ((guard=0; guard<200; guard++)); do
+    n=$(tagged | head -n 1)
+    [ -n "$n" ] || break
+    tagged | grep -qx "$n" || continue   # it moved between the two reads: start again
+    "$UFW" --force delete "$n" >/dev/null 2>&1 || die 4
+  done
+  [ -z "$(tagged | head -n 1)" ] || die 4
+}
+
 case "${1:-}" in
   allow)
-    [ "$#" -eq 2 ] || die 2
-    valid_cidr "$2" || die 2
+    [ "$#" -eq 4 ] || die 2
+    valid_iface "$2" || die 2
+    valid_cidr "$3" || die 2
+    valid_bound "$4" "$3" || die 2
+    take_lock
     ufw_active || die 3
-    "$UFW" allow from "$2" to any port "$PORT" proto tcp comment "$TAG" >/dev/null 2>&1 || die 4
+    "$UFW" allow in on "$2" from "$3" to "$4" port "$PORT" proto tcp comment "$TAG" >/dev/null 2>&1 || die 4
     ;;
   remove)
-    [ "$#" -le 2 ] || die 2
-    want=""
-    if [ "$#" -eq 2 ]; then valid_cidr "$2" || die 2; want="$2"; fi
+    { [ "$#" -eq 1 ] || [ "$#" -eq 4 ]; } || die 2
+    iface=""; want=""; bound=""
+    if [ "$#" -eq 4 ]; then
+      valid_iface "$2" || die 2; valid_cidr "$3" || die 2; valid_bound "$4" "$3" || die 2
+      iface="$2"; want="$3"; bound="$4"
+    fi
+    take_lock
     ufw_active || die 3
-    # Every delete uses a number from a listing read just before it, confirmed by a second read: the numbers shift
-    # after each delete (and if something else edits the rules), so nothing is remembered between deletes.
-    re='^\[[[:space:]]*([0-9]+)\][[:space:]](.*)[[:space:]]#[[:space:]]'"$TAG"'[[:space:]]*$'
-    tagged() {  # prints tagged rule numbers, highest first; with a CIDR, only rules whose source equals it exactly
-      local line num body from
-      while IFS= read -r line; do
-        if [[ "$line" =~ $re ]]; then
-          num="${BASH_REMATCH[1]}"; body="${BASH_REMATCH[2]}"
-          if [ -n "$want" ]; then
-            # Whole-string compare of the source column (never a substring: 10.0.0.0/16 is not 10.0.0.0/24).
-            [[ "$body" == *"ALLOW IN"* ]] || continue
-            from="${body##*ALLOW IN}"
-            from="${from#"${from%%[![:space:]]*}"}"
-            from="${from%"${from##*[![:space:]]}"}"
-            [ "$from" = "$want" ] || continue
-          fi
-          echo "$num"
-        fi
-      done < <("$UFW" status numbered 2>/dev/null) | sort -rn
-    }
-    for ((guard=0; guard<200; guard++)); do
-      n=$(tagged | head -n 1)
-      [ -n "$n" ] || break
-      tagged | grep -qx "$n" || continue   # it moved between the two reads: start again
-      "$UFW" --force delete "$n" >/dev/null 2>&1 || die 4
-    done
-    [ -z "$(tagged | head -n 1)" ] || die 4
+    if [ -n "$want" ]; then
+      # The per network form deletes by rule spec, so no number is ever involved. The exit status is not trusted (a rule already gone is not an error):
+      # the fresh listing below decides.
+      "$UFW" --force delete allow in on "$iface" from "$want" to "$bound" port "$PORT" proto tcp >/dev/null 2>&1
+      [ -z "$(tagged | head -n 1)" ] || die 4
+      exit 0
+    fi
+    sweep_all
+    ;;
+  replace)
+    # The upgrade in one run, so one admin prompt: every tagged rule goes (the 0.1.2 rule has no interface and its network is not recorded, so it cannot be
+    # named by spec), then the one scoped allow is added. Under the one lock. A failed allow leaves no rule and exits 4; the app asks again.
+    [ "$#" -eq 4 ] || die 2
+    valid_iface "$2" || die 2
+    valid_cidr "$3" || die 2
+    valid_bound "$4" "$3" || die 2
+    take_lock
+    ufw_active || die 3
+    sweep_all
+    "$UFW" allow in on "$2" from "$3" to "$4" port "$PORT" proto tcp comment "$TAG" >/dev/null 2>&1 || die 4
     ;;
   *) die 2 ;;
 esac

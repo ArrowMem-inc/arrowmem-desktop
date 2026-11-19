@@ -525,39 +525,51 @@ pub struct FirstInstall {
 
 const MARKER: &str = "first-install-done";
 
-/// Ask for the firewall rule (the elevated prompt). The marker is written only when the prompt reached a
-/// definite answer: the rule is in (Done) or there is no firewall to configure (NoFirewall). A cancel, a failure
-/// or a bad mask leaves no marker, so the next start asks again.
-fn apply_firewall(data_dir: &Path, lan: (Ipv4Addr, Ipv4Addr), pkexec: &Path, helper: &Path) -> Result<FwOutcome, String> {
+const LEGACY_MARKER: &str = "fw-legacy-checked";
+
+/// Version 0.1.2 left one unscoped tagged rule (any interface, any local address) and its first-install marker. An app
+/// holding that marker, no scoped record and no legacy marker has not yet cleaned it up. A fresh install has no first-install marker, and an app that records
+/// scoped rules has been through a scoped version (a sweep would take those too).
+fn upgrade_pending(data_dir: &Path) -> bool {
+    data_dir.join(MARKER).exists() && !data_dir.join(LEGACY_MARKER).exists() && firewall::recorded_cidrs(data_dir).is_empty()
+}
+
+/// Ask for the firewall rule (the elevated prompt). On an upgrade from 0.1.2 the one prompt is the helper's `replace`: the old rule goes and the scoped rule comes
+/// in the same run. This is the only place a rule is allowed, so the cleanup runs on every allow path: the start, and the window's button after a
+/// start with no private address. The markers are written only when the prompt reached a definite answer: the rule is in (Done) or there is no
+/// firewall to configure (NoFirewall). A cancel, a failure or a bad mask leaves no marker, so the next start asks again.
+fn apply_firewall(data_dir: &Path, lan: (Ipv4Addr, Ipv4Addr), ifaces: &[crate::linuxrun::Iface], pkexec: &Path, helper: &Path) -> Result<FwOutcome, String> {
     // The helper comes from the Arch package. Without it there is no prompt and no marker: the status says so.
     if !helper.exists() {
         return Ok(FwOutcome::HelperMissing);
     }
-    let r = firewall::cidr_from(lan.0, lan.1).and_then(|c| firewall::allow(pkexec, helper, &c));
+    // The rule is scoped to the interface that holds the address (from the follow's own list) and to that address.
+    let r = if upgrade_pending(data_dir) { firewall::replace_for(pkexec, helper, data_dir, lan, ifaces) } else { firewall::allow_for(pkexec, helper, data_dir, lan, ifaces) };
     if matches!(r, Ok(FwOutcome::Done) | Ok(FwOutcome::NoFirewall)) {
         let _ = std::fs::create_dir_all(data_dir);
         let _ = std::fs::write(data_dir.join(MARKER), b"1");
+        let _ = std::fs::write(data_dir.join(LEGACY_MARKER), b"1");
     }
     r
 }
 
-/// At the end of the first install: the one elevated prompt (firewall allow), then ask for the pair window.
+/// At the end of the first install, and once after an upgrade from 0.1.2: the one elevated prompt (firewall), then ask for the pair window.
 /// Needs a private address (no address, no QR, nothing to allow): nothing happens. The pair window opens only
 /// once the prompt has been answered.
-pub fn first_install(data_dir: &Path, lan: Option<(Ipv4Addr, Ipv4Addr)>, pkexec: &Path, helper: &Path) -> FirstInstall {
+pub fn first_install(data_dir: &Path, lan: Option<(Ipv4Addr, Ipv4Addr)>, ifaces: &[crate::linuxrun::Iface], pkexec: &Path, helper: &Path) -> FirstInstall {
     let none = FirstInstall { firewall: None, open_pair_window: false };
-    if data_dir.join(MARKER).exists() {
+    if data_dir.join(MARKER).exists() && !upgrade_pending(data_dir) {
         return none;
     }
     let Some(lan) = lan else { return none };
-    let fw = apply_firewall(data_dir, lan, pkexec, helper);
-    let open = data_dir.join(MARKER).exists();
+    let fw = apply_firewall(data_dir, lan, ifaces, pkexec, helper);
+    let open = matches!(fw, Ok(FwOutcome::Done) | Ok(FwOutcome::NoFirewall));
     FirstInstall { firewall: Some(fw), open_pair_window: open }
 }
 
 /// The status window's retry button: ask for the firewall rule again.
-pub fn retry_firewall(data_dir: &Path, lan: Option<(Ipv4Addr, Ipv4Addr)>, pkexec: &Path, helper: &Path) -> Result<FwOutcome, String> {
-    apply_firewall(data_dir, lan.ok_or("no private network address")?, pkexec, helper)
+pub fn retry_firewall(data_dir: &Path, lan: Option<(Ipv4Addr, Ipv4Addr)>, ifaces: &[crate::linuxrun::Iface], pkexec: &Path, helper: &Path) -> Result<FwOutcome, String> {
+    apply_firewall(data_dir, lan.ok_or("no private network address")?, ifaces, pkexec, helper)
 }
 
 #[cfg(test)]
@@ -1289,8 +1301,13 @@ mod tests {
     /// A helper path that exists (so the app calls it directly).
     fn helper_file(d: &Path) -> PathBuf {
         let h = d.join("helper");
-        std::fs::write(&h, "x").unwrap();
+        std::fs::write(&h, "HELPER_VERSION=5\n").unwrap();
         h
+    }
+
+    /// The interface list the follow would have read: one interface per address, so the rule can be scoped to it.
+    fn ifs(lan: Option<(Ipv4Addr, Ipv4Addr)>) -> Vec<crate::linuxrun::Iface> {
+        lan.map(|(ip, mask)| crate::linuxrun::Iface { name: "enp3s0".into(), ip, mask }).into_iter().collect()
     }
 
     fn pkexec(d: &Path, code: i32) -> PathBuf {
@@ -1307,10 +1324,10 @@ mod tests {
         let h = helper_file(&d);
         let pk = pkexec(&d, 0);
         let lan = Some((ip("192.168.1.77"), ip("255.255.255.0")));
-        let r = first_install(&d, lan, &pk, &h);
+        let r = first_install(&d, lan, &ifs(lan), &pk, &h);
         assert_eq!(r, FirstInstall { firewall: Some(Ok(FwOutcome::Done)), open_pair_window: true });
-        assert_eq!(std::fs::read_to_string(d.join("pk.log")).unwrap(), format!("{} allow 192.168.1.0/24\n", h.display()));
-        let r2 = first_install(&d, lan, &pk, &h);
+        assert_eq!(std::fs::read_to_string(d.join("pk.log")).unwrap(), format!("{} allow enp3s0 192.168.1.0/24 192.168.1.77\n", h.display()));
+        let r2 = first_install(&d, lan, &ifs(lan), &pk, &h);
         assert_eq!(r2, FirstInstall { firewall: None, open_pair_window: false });
         assert_eq!(std::fs::read_to_string(d.join("pk.log")).unwrap().lines().count(), 1);
     }
@@ -1320,11 +1337,11 @@ mod tests {
         let d = tmp("onep");
         let pk = pkexec(&d, 0);
         let lan = Some((ip("192.168.1.77"), ip("255.255.255.0")));
-        let r = first_install(&d, lan, &pk, &d.join("not-installed-yet"));
+        let r = first_install(&d, lan, &ifs(lan), &pk, &d.join("not-installed-yet"));
         assert_eq!(r, FirstInstall { firewall: Some(Ok(FwOutcome::HelperMissing)), open_pair_window: false });
         assert!(!d.join("pk.log").exists(), "pkexec must not run");
         assert!(!d.join("first-install-done").exists());
-        assert_eq!(retry_firewall(&d, lan, &pk, &d.join("nope")).unwrap(), FwOutcome::HelperMissing);
+        assert_eq!(retry_firewall(&d, lan, &ifs(lan), &pk, &d.join("nope")).unwrap(), FwOutcome::HelperMissing);
     }
 
     #[test]
@@ -1332,10 +1349,10 @@ mod tests {
         let d = tmp("fi0");
         let h = helper_file(&d);
         let pk = pkexec(&d, 0);
-        let r = first_install(&d, None, &pk, &h);
+        let r = first_install(&d, None, &[], &pk, &h);
         assert_eq!(r, FirstInstall { firewall: None, open_pair_window: false });
         assert!(!d.join("pk.log").exists() && !d.join("first-install-done").exists());
-        assert!(first_install(&d, Some((ip("10.0.0.2"), ip("255.255.0.0"))), &pk, &h).open_pair_window);
+        assert!(first_install(&d, Some((ip("10.0.0.2"), ip("255.255.0.0"))), &ifs(Some((ip("10.0.0.2"), ip("255.255.0.0")))), &pk, &h).open_pair_window);
     }
 
     #[test]
@@ -1344,10 +1361,10 @@ mod tests {
         let h = helper_file(&d);
         let pk = pkexec(&d, 126);
         let lan = Some((ip("10.0.0.2"), ip("255.255.255.0")));
-        let r = first_install(&d, lan, &pk, &h);
+        let r = first_install(&d, lan, &ifs(lan), &pk, &h);
         assert_eq!(r.firewall, Some(Ok(FwOutcome::Failed(126))));
         assert!(!r.open_pair_window && !d.join("first-install-done").exists());
-        assert_eq!(first_install(&d, lan, &pk, &h).firewall, Some(Ok(FwOutcome::Failed(126))));
+        assert_eq!(first_install(&d, lan, &ifs(lan), &pk, &h).firewall, Some(Ok(FwOutcome::Failed(126))));
         assert_eq!(std::fs::read_to_string(d.join("pk.log")).unwrap().lines().count(), 2);
     }
 
@@ -1355,7 +1372,7 @@ mod tests {
     fn helper_failure_leaves_no_marker() {
         let d = tmp("fi4");
         let h = helper_file(&d);
-        let r = first_install(&d, Some((ip("10.0.0.2"), ip("255.255.255.0"))), &pkexec(&d, 4), &h);
+        let r = first_install(&d, Some((ip("10.0.0.2"), ip("255.255.255.0"))), &ifs(Some((ip("10.0.0.2"), ip("255.255.255.0")))), &pkexec(&d, 4), &h);
         assert_eq!(r.firewall, Some(Ok(FwOutcome::Failed(4))));
         assert!(!d.join("first-install-done").exists());
     }
@@ -1365,26 +1382,96 @@ mod tests {
         let d = tmp("retry");
         let h = helper_file(&d);
         let lan = Some((ip("192.168.1.9"), ip("255.255.255.0")));
-        assert_eq!(retry_firewall(&d, lan, &pkexec(&d, 126), &h).unwrap(), FwOutcome::Failed(126));
+        assert_eq!(retry_firewall(&d, lan, &ifs(lan), &pkexec(&d, 126), &h).unwrap(), FwOutcome::Failed(126));
         assert!(!d.join("first-install-done").exists());
-        assert_eq!(retry_firewall(&d, lan, &pkexec(&d, 0), &h).unwrap(), FwOutcome::Done);
+        assert_eq!(retry_firewall(&d, lan, &ifs(lan), &pkexec(&d, 0), &h).unwrap(), FwOutcome::Done);
         assert!(d.join("first-install-done").exists());
-        assert!(retry_firewall(&d, None, &pkexec(&d, 0), &h).is_err());
+        assert!(retry_firewall(&d, None, &[], &pkexec(&d, 0), &h).is_err());
     }
 
     #[test]
     fn no_firewall_is_a_recorded_outcome() {
         let d = tmp("fin");
         let h = helper_file(&d);
-        let r = first_install(&d, Some((ip("10.0.0.2"), ip("255.255.255.0"))), &pkexec(&d, 3), &h);
+        let r = first_install(&d, Some((ip("10.0.0.2"), ip("255.255.255.0"))), &ifs(Some((ip("10.0.0.2"), ip("255.255.255.0")))), &pkexec(&d, 3), &h);
         assert_eq!(r.firewall, Some(Ok(FwOutcome::NoFirewall)));
+    }
+
+    fn pk_log(d: &Path) -> String { std::fs::read_to_string(d.join("pk.log")).unwrap_or_default() }
+
+    /// An upgrade from 0.1.2 (first-install marker, no scoped record, no legacy marker) is ONE prompt, the helper's replace: the old rule
+    /// goes and the scoped one comes in the same run. Asked once: a later start asks nothing.
+    #[test]
+    fn upgrade_is_one_replace_prompt_at_start_then_never_asks_again() {
+        let d = tmp("legacy");
+        let h = helper_file(&d);
+        std::fs::write(d.join("first-install-done"), b"1").unwrap(); // what 0.1.2 left
+        let lan = Some((ip("192.168.1.77"), ip("255.255.255.0")));
+        let r = first_install(&d, lan, &ifs(lan), &pkexec(&d, 0), &h);
+        assert_eq!(r, FirstInstall { firewall: Some(Ok(FwOutcome::Done)), open_pair_window: true });
+        assert_eq!(pk_log(&d), format!("{} replace enp3s0 192.168.1.0/24 192.168.1.77\n", h.display()), "exactly one prompt, the replace form");
+        assert!(d.join("fw-legacy-checked").exists());
+        assert_eq!(first_install(&d, lan, &ifs(lan), &pkexec(&d, 0), &h), FirstInstall { firewall: None, open_pair_window: false });
+        assert_eq!(pk_log(&d).lines().count(), 1, "{}", pk_log(&d));
+    }
+
+    /// The app started with no private address (Wi-Fi not up), so no prompt at start; the first allow is the window's button. The old rule
+    /// must go in THAT call, and a later start asks nothing.
+    #[test]
+    fn the_legacy_cleanup_runs_on_the_button_path_when_the_start_had_no_address() {
+        let d = tmp("legacy-d1");
+        let h = helper_file(&d);
+        std::fs::write(d.join("first-install-done"), b"1").unwrap();
+        assert_eq!(first_install(&d, None, &[], &pkexec(&d, 0), &h), FirstInstall { firewall: None, open_pair_window: false });
+        assert_eq!(pk_log(&d), "", "no address, no prompt at start");
+        let lan = Some((ip("192.168.1.77"), ip("255.255.255.0")));
+        assert_eq!(retry_firewall(&d, lan, &ifs(lan), &pkexec(&d, 0), &h).unwrap(), FwOutcome::Done);
+        assert_eq!(pk_log(&d), format!("{} replace enp3s0 192.168.1.0/24 192.168.1.77\n", h.display()), "the button's first allow is the replace");
+        assert_eq!(first_install(&d, lan, &ifs(lan), &pkexec(&d, 0), &h).firewall, None);
+        assert_eq!(pk_log(&d).lines().count(), 1, "{}", pk_log(&d));
+    }
+
+    #[test]
+    fn a_fresh_install_is_a_plain_allow_and_is_not_an_upgrade_afterwards() {
+        let d = tmp("legacy-fresh");
+        let h = helper_file(&d);
+        let lan = Some((ip("192.168.1.77"), ip("255.255.255.0")));
+        assert!(first_install(&d, lan, &ifs(lan), &pkexec(&d, 0), &h).open_pair_window);
+        assert_eq!(pk_log(&d), format!("{} allow enp3s0 192.168.1.0/24 192.168.1.77\n", h.display()));
+        assert!(d.join("fw-legacy-checked").exists(), "recorded, so the first-install marker does not look like an upgrade");
+    }
+
+    /// A declined or failed prompt leaves the 0.1.2 state as it was and asks again; no firewall (ufw inactive) is a recorded answer; a missing helper
+    /// asks nothing; an app that already records scoped rules is not an upgrade (a sweep would take them), so it gets the plain allow.
+    #[test]
+    fn upgrade_declined_or_failed_asks_again_no_firewall_is_recorded_and_a_scoped_record_is_not_an_upgrade() {
+        let d = tmp("legacy-more");
+        let h = helper_file(&d);
+        std::fs::write(d.join("first-install-done"), b"1").unwrap();
+        let lan = Some((ip("192.168.1.77"), ip("255.255.255.0")));
+        for code in [126, 4] {
+            let r = first_install(&d, lan, &ifs(lan), &pkexec(&d, code), &h);
+            assert_eq!(r, FirstInstall { firewall: Some(Ok(FwOutcome::Failed(code))), open_pair_window: false });
+            assert!(!d.join("fw-legacy-checked").exists() && d.join("first-install-done").exists());
+        }
+        let before = pk_log(&d);
+        assert_eq!(first_install(&d, lan, &ifs(lan), &pkexec(&d, 0), &d.join("nope")).firewall, Some(Ok(FwOutcome::HelperMissing)));
+        assert_eq!(pk_log(&d), before);
+        assert_eq!(first_install(&d, lan, &ifs(lan), &pkexec(&d, 3), &h).firewall, Some(Ok(FwOutcome::NoFirewall)));
+        assert!(d.join("fw-legacy-checked").exists());
+        let d2 = tmp("legacy-rec");
+        let h2 = helper_file(&d2);
+        std::fs::write(d2.join("first-install-done"), b"1").unwrap();
+        std::fs::write(d2.join("fw-allowed"), "enp3s0 192.168.1.0/24 192.168.1.77\n").unwrap();
+        assert_eq!(retry_firewall(&d2, lan, &ifs(lan), &pkexec(&d2, 0), &h2).unwrap(), FwOutcome::Done);
+        assert_eq!(pk_log(&d2), format!("{} allow enp3s0 192.168.1.0/24 192.168.1.77\n", h2.display()));
     }
 
     #[test]
     fn bad_mask_skips_the_rule_and_leaves_no_marker() {
         let d = tmp("fib");
         let h = helper_file(&d);
-        let r = first_install(&d, Some((ip("10.0.0.2"), ip("255.0.255.0"))), &pkexec(&d, 0), &h);
+        let r = first_install(&d, Some((ip("10.0.0.2"), ip("255.0.255.0"))), &[], &pkexec(&d, 0), &h);
         assert!(matches!(r.firewall, Some(Err(_))));
         assert!(!d.join("pk.log").exists());
         assert!(!r.open_pair_window && !d.join("first-install-done").exists());

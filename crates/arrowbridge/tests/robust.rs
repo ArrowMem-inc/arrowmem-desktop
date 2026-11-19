@@ -36,6 +36,7 @@ fn long_adversarial_text_finishes_quickly() {
         "overdose ".repeat(20_000),
         format!("{}die", "i ".repeat(40_000)),
         "no point in ".repeat(15_000),
+        "my dog ate pills ".repeat(6_000), // the pet branch
         "\u{1f}".repeat(100_000),
         "(".repeat(100_000),
         "'".repeat(100_000),
@@ -80,10 +81,10 @@ fn the_output_guards_never_panic_and_never_hang() {
 }
 
 #[test]
-fn long_benign_prose_is_not_urgent_and_is_fast() {
+fn long_benign_prose_is_not_urgent() {
     // Review finding 1: ordinary text of 4.7 KB and more used to answer "Call 911" because the slow engine gave up and a give-up counted as a match.
+    // The give-up is a counted backtrack limit, not a clock, so these asserts do not depend on load. The time bound is tests/robust_timing.rs.
     let prose = "The Veterans Affairs disability benefit is described in section twelve of the guide. ".repeat(2500);
-    let start = Instant::now();
     for d in [urgent::Distress::Available, urgent::Distress::Missing] {
         let r = urgent::urgent_reply(&[&prose], "en", d);
         if d == urgent::Distress::Available { assert_eq!(r, None, "benign prose must not be urgent"); }
@@ -91,7 +92,6 @@ fn long_benign_prose_is_not_urgent_and_is_fast() {
     assert!(!distress::shows_distress(&prose));
     assert!(urgent::urgent_reply(&[&format!("{prose} bleeding")], "en", urgent::Distress::Available).is_some(), "a real phrase at the end of long text is still caught");
     assert!(urgent::urgent_reply(&["a b ".repeat(60_000).as_str()], "en", urgent::Distress::Available).is_none());
-    assert!(start.elapsed() < Duration::from_secs(5), "took {:?}", start.elapsed());
 }
 
 #[test]

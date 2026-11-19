@@ -668,13 +668,18 @@ mod tests {
         exec_ready(&pk);
         pk
     }
-    fn helper_path() -> PathBuf { Path::new(env!("CARGO_MANIFEST_DIR")).join("../scripts/arrowbridge-fw") }
+    /// A copy of the shipped helper in the rig's own directory: the firewall layer keys its records by helper path, so no test sees another's.
+    fn helper_path(r: &Rig) -> PathBuf {
+        let p = r.d.join("arrowbridge-fw");
+        std::fs::copy(Path::new(env!("CARGO_MANIFEST_DIR")).join("../scripts/arrowbridge-fw"), &p).unwrap();
+        p
+    }
 
     #[test]
     fn the_poll_thread_never_prompts_and_the_window_button_allows_then_withdraws_the_old_networks() {
         let r = Rig::new("noprompt");
         let pk = recording_pkexec(&r.d);
-        let helper = helper_path();
+        let helper = helper_path(&r);
         let ctx = Ctx { ctl: &r.ctl, dir: &r.dir, companion_bin: Path::new("/opt/am/c"), state_dir: &r.state, llama_port: 41717, upstream_model: "m-1" };
         let mut f = at("192.168.1.7");
         // two moves with the poll thread's own hooks: bound each time, closed each time, no pkexec call
@@ -686,12 +691,18 @@ mod tests {
         assert!(!r.d.join("pk.log").exists(), "the poll thread raised an admin prompt");
         assert_eq!(f.stale, vec!["192.168.1.0/24".to_string(), "10.42.0.0/24".to_string()]);
         // the window's button: allow the network that is up, then withdraw the two that were left
-        assert_eq!(firewall::allow_for(&pk, &helper, lan("172.16.5.9")).unwrap(), FwOutcome::Done);
+        // Every allow names the interface that holds the address and the address itself, and a withdrawal names the interface its
+        // allow named. The two left networks were allowed by earlier presses of this process; those allows are seeded here so their withdrawals have records.
+        assert_eq!(firewall::allow_for(&pk, &helper, &r.d, lan("192.168.1.7"), &lan_net()).unwrap(), FwOutcome::Done);
+        assert_eq!(firewall::allow_for(&pk, &helper, &r.d, lan("10.42.0.1"), &hotspot_net()).unwrap(), FwOutcome::Done);
+        assert_eq!(firewall::allow_for(&pk, &helper, &r.d, lan("172.16.5.9"), &with(vec![ifc("wlp2s0", "172.16.5.9")])).unwrap(), FwOutcome::Done);
         let cur = firewall::cidr_from(ip("172.16.5.9"), ip("255.255.255.0")).unwrap();
-        withdraw_stale(&mut f.stale, Some(&cur), &|c| firewall::remove_for(&pk, &helper, c));
+        withdraw_stale(&mut f.stale, Some(&cur), &|c| firewall::remove_for(&pk, &helper, &r.d, c));
         assert!(f.stale.is_empty());
         let log: Vec<String> = std::fs::read_to_string(r.d.join("pk.log")).unwrap().lines().map(|l| l.splitn(2, ' ').nth(1).unwrap().to_string()).collect();
-        assert_eq!(log, vec!["allow 172.16.5.0/24", "remove 192.168.1.0/24", "remove 10.42.0.0/24"]);
+        assert_eq!(log, vec![
+            "allow enp3s0 192.168.1.0/24 192.168.1.7", "allow wlan0 10.42.0.0/24 10.42.0.1", "allow wlp2s0 172.16.5.0/24 172.16.5.9",
+            "remove enp3s0 192.168.1.0/24 192.168.1.7", "remove wlan0 10.42.0.0/24 10.42.0.1"]);
     }
 
     /// Review C4: an inactive ufw (helper exit 3) or a missing helper deleted nothing. Dropping the entry then would bring the old allow back
@@ -708,7 +719,7 @@ mod tests {
         assert!(withdraw_stale(&mut stale, None, &|_| Ok(FwOutcome::Done)));
         // through the real argv path: ufw inactive (exit 3), then enabled again
         let r = Rig::new("c4");
-        let helper = helper_path();
+        let helper = helper_path(&r);
         let off = r.d.join("pk-off");
         std::fs::write(&off, format!("#!/bin/sh\n[ \"$1\" = __probe ] && exit 0\necho \"$@\" >> {}/off.log\nexit 3\n", r.d.display())).unwrap();
         std::fs::set_permissions(&off, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -716,7 +727,9 @@ mod tests {
         let pk_on = recording_pkexec(&r.d);
         let mut f = at("10.42.0.1");
         r.tick(&mut f, &noise(), None, 0); // parks 10.42.0.0/24
-        assert_eq!(press_button(&mut f.stale, None, &|_| Ok(FwOutcome::Done), &|c| firewall::remove_for(&off, &helper, c)).is_err(), true);
+        // that network was allowed earlier by this process (seeded): a withdrawal needs the interface its allow named
+        assert_eq!(firewall::allow_for(&pk_on, &helper, &r.d, lan("10.42.0.1"), &hotspot_net()).unwrap(), FwOutcome::Done);
+        assert_eq!(press_button(&mut f.stale, None, &|_| Ok(FwOutcome::Done), &|c| firewall::remove_for(&off, &helper, &r.d, c)).is_err(), true);
         assert_eq!(f.stale, vec!["10.42.0.0/24"], "an inactive ufw dropped the entry");
         // the poll thread's own firewall step keeps it too
         let hooks = Hooks { bound: &|_| {}, allow: &|_| Ok(FwOutcome::Done), remove: &|_| Ok(FwOutcome::NoFirewall), busy: &|| false };
@@ -725,9 +738,9 @@ mod tests {
         assert_eq!(f.stale, vec!["10.42.0.0/24"]);
         // ufw is enabled again: the next press finds the entry and deletes the rule
         let cur = Some(lan("192.168.1.7"));
-        assert_eq!(press_button(&mut f.stale, cur, &|_| Ok(FwOutcome::Done), &|c| firewall::remove_for(&pk_on, &helper, c)), Ok(FwOutcome::Done));
+        assert_eq!(press_button(&mut f.stale, cur, &|_| Ok(FwOutcome::Done), &|c| firewall::remove_for(&pk_on, &helper, &r.d, c)), Ok(FwOutcome::Done));
         assert!(f.stale.is_empty());
-        assert!(std::fs::read_to_string(r.d.join("pk.log")).unwrap().contains("remove 10.42.0.0/24"));
+        assert!(std::fs::read_to_string(r.d.join("pk.log")).unwrap().contains("remove wlan0 10.42.0.0/24 10.42.0.1"));
     }
 
     /// Review N2: a press that overlaps a tick which parks a network must not write the list back without it, and the press's own withdrawal must
@@ -820,14 +833,17 @@ mod tests {
         std::fs::write(&pk, format!("#!/bin/sh\n[ \"$1\" = __probe ] && exit 0\necho \"$@\" >> {}/pk.log\nexit 0\n", r.d.display())).unwrap();
         std::fs::set_permissions(&pk, std::fs::Permissions::from_mode(0o755)).unwrap();
         exec_ready(&pk);
-        let helper = Path::new(env!("CARGO_MANIFEST_DIR")).join("../scripts/arrowbridge-fw");
+        let helper = helper_path(&r);
         let mut f = at("192.168.1.7");
         let ctx = Ctx { ctl: &r.ctl, dir: &r.dir, companion_bin: Path::new("/opt/am/c"), state_dir: &r.state, llama_port: 41717, upstream_model: "m-1" };
-        let allow = |l: Lan| firewall::allow_for(&pk, &helper, l);
-        let remove = |c: &str| firewall::remove_for(&pk, &helper, c);
+        let nets = hotspot_net();
+        let allow = |l: Lan| firewall::allow_for(&pk, &helper, &r.d, l, &nets);
+        let remove = |c: &str| firewall::remove_for(&pk, &helper, &r.d, c);
+        // the first network was allowed earlier (seeded), so leaving it has a rule to withdraw
+        assert_eq!(firewall::allow_for(&pk, &helper, &r.d, lan("192.168.1.7"), &lan_net()).unwrap(), FwOutcome::Done);
         let s = f.tick(&hotspot_net(), Some("wlan0"), &ctx, &Hooks { bound: &|_| {}, allow: &allow, remove: &remove, busy: &|| false }, 0);
         assert!(matches!(s, Step::Followed { firewall: FwStep::Done, .. }), "{s:?}");
-        let log: Vec<String> = std::fs::read_to_string(r.d.join("pk.log")).unwrap().lines().map(|l| l.rsplit(' ').take(2).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join(" ")).collect();
-        assert_eq!(log, vec!["allow 10.42.0.0/24", "remove 192.168.1.0/24"]);
+        let log: Vec<String> = std::fs::read_to_string(r.d.join("pk.log")).unwrap().lines().map(|l| l.splitn(2, ' ').nth(1).unwrap().to_string()).collect();
+        assert_eq!(log, vec!["allow enp3s0 192.168.1.0/24 192.168.1.7", "allow wlan0 10.42.0.0/24 10.42.0.1", "remove enp3s0 192.168.1.0/24 192.168.1.7"]);
     }
 }
