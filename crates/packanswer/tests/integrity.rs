@@ -150,6 +150,7 @@ fn a_natmed_line_with_any_authored_key_is_refused_and_the_sentinel_never_loads()
     let r = files_with("l-key", |f| {
         let mut v: serde_json::Value = serde_json::from_str(f[6].1.lines().next().unwrap()).unwrap();
         v["plant_id"] = "ginger2".into();
+        v["common_name"] = "Ginger two".into();
         v["evidence"] = serde_json::json!({"sentence": "SENTINEL-AUTHORED"});
         f[6].1.push_str(&(v.to_string() + "\n"));
     });

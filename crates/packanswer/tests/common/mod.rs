@@ -18,8 +18,8 @@ pub fn rec(id: &str, topic: &str, quote: &str, url: &str) -> String {
     json!({"topic": topic, "id": id, "quote": quote, "source_url": url, "context_url": url, "retrieved": "2026-11-05", "context": context}).to_string()
 }
 
-pub fn plant(id: &str, common: &str, latin: &str, aliases: &[&str], sources: &[(&str, bool)]) -> String {
-    let s: Vec<_> = sources.iter().map(|(q, t)| json!({"quote": q, "url": NCCIH, "fetched": "2026-11-14", "traditional": t})).collect();
+pub fn plant(id: &str, common: &str, latin: &str, aliases: &[&str], sources: &[(&str, bool, &str)]) -> String {
+    let s: Vec<_> = sources.iter().map(|(q, t, k)| json!({"quote": q, "url": NCCIH, "fetched": "2026-11-14", "traditional": t, "kind": k})).collect();
     json!({"plant_id": id, "common_name": common, "latin_name": latin, "aliases": aliases, "sources": s}).to_string()
 }
 
@@ -50,9 +50,9 @@ pub fn default_files() -> Vec<(&'static str, String)> {
         (
             "natmed_shippable.jsonl",
             jsonl(&[
-                plant("ginger", "Ginger", "Zingiber officinale", &[], &[("Ginger is used traditionally for nausea.", true), ("Ginger can interact with blood thinners.", false)]),
-                plant("garlic", "Garlic", "Allium sativum", &["stinking rose"], &[("Garlic may raise bleeding risk.", false)]),
-                plant("chamomile", "Chamomile", "Matricaria chamomilla", &[], &[("Chamomile tea is used for nausea.", true)]),
+                plant("ginger", "Ginger", "Zingiber officinale", &[], &[("Ginger can interact with blood thinners.", false, "warning"), ("Ginger is used traditionally for nausea.", true, "use")]),
+                plant("garlic", "Garlic", "Allium sativum", &["stinking rose"], &[("Garlic may raise bleeding risk.", false, "warning")]),
+                plant("chamomile", "Chamomile", "Matricaria chamomilla", &[], &[("Chamomile tea is used for nausea.", true, "warning")]),
             ]),
         ),
     ]
@@ -116,9 +116,13 @@ impl Selector for Sel {
     }
 }
 
+/// Every quote shown, in the order shown: for a natural medicine answer, each plant's warnings, then background, then uses.
 pub fn quotes(a: &packanswer::Answer) -> Vec<String> {
     match a {
         packanswer::Answer::Blocks(f) | packanswer::Answer::EnglishOnly(f) => f.blocks.iter().map(|b| b.quote.clone()).collect(),
+        packanswer::Answer::NatMed(n) | packanswer::Answer::EnglishOnlyNatMed(n) => {
+            n.groups().flat_map(|g| g.entries().map(|(_, e)| e.quote().to_string())).collect()
+        }
         _ => Vec::new(),
     }
 }

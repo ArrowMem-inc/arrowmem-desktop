@@ -200,11 +200,11 @@ fn t17_a_symptom_word_never_selects_a_plant_and_a_name_gives_every_shipped_quote
     assert!(matches!(a, Answer::Blocks(_)), "{a:?}");
     assert!(quotes(&a).iter().all(|q| !q.contains("Ginger") && !q.contains("Chamomile")), "{a:?}");
     let g = ask(&p, "tell me about ginger");
-    assert_eq!(quotes(&g), ["Ginger is used traditionally for nausea.", "Ginger can interact with blood thinners."]);
-    let Answer::Blocks(f) = g else { panic!() };
-    assert_eq!(f.blocks[0].label, Some(key::TRADITIONAL));
-    assert_eq!(f.blocks[1].label, None);
-    assert_eq!(f.chrome, [key::NATMED_CAUTION]);
+    assert_eq!(quotes(&g), ["Ginger can interact with blood thinners.", "Ginger is used traditionally for nausea."]);
+    let Answer::NatMed(n) = g else { panic!() };
+    let labels: Vec<_> = n.groups().next().unwrap().entries().map(|(_, e)| e.label()).collect();
+    assert_eq!(labels, [None, Some(key::TRADITIONAL)]);
+    assert_eq!(n.caution(), key::NATMED_CAUTION);
 }
 
 #[test]

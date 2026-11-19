@@ -117,3 +117,31 @@ fn the_converted_real_v2_verifies_and_loads_and_a_held_id_is_refused_at_every_st
     assert!(!packconv(&[Path::new("pack"), &content, &hosts_path, &person_path, &tmp.join("pack2"), &one_path]).0);
     assert!(!packconv(&[Path::new("verify-pkg"), &out, Path::new("-"), &one_path]).0);
 }
+
+/// A pack the converter built, with the yes list taken by machine from the PLANT lines of its own report. Run: PACKANSWER_BUILT_DIR=<pack folder>
+/// PACKANSWER_BUILT_REPORT=<its report> PACKANSWER_HELD_TSV=<held list> cargo test --test real_v2 -- --ignored built_pack
+#[test]
+#[ignore]
+fn a_built_pack_loads_and_every_plant_draws_warnings_then_background_then_uses() {
+    let dir = env("PACKANSWER_BUILT_DIR");
+    let pin = sha256_hex(&fs::read(dir.join("PACK.sha256")).unwrap());
+    let report = fs::read_to_string(env("PACKANSWER_BUILT_REPORT")).unwrap();
+    let plants: Vec<Vec<&str>> = report.lines().filter_map(|l| l.strip_prefix("PLANT\t")).map(|l| l.split('\t').collect()).collect();
+    let yes: Vec<(&str, &str)> = plants.iter().map(|c| (c[0], c[1])).collect();
+    let pack = Pack::open(&dir, &pin, &held(), &yes).expect("the built pack must load");
+    // a plant is named by its whole common name (aliases come only from a person file, none here)
+    let file = fs::read_to_string(dir.join(pack::NATMED_FILE)).unwrap();
+    let name = |id: &str| {
+        let v = file.lines().map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap()).find(|v| v["plant_id"] == id).unwrap();
+        v["common_name"].as_str().unwrap().to_string()
+    };
+    for (id, _) in &yes {
+        let a = packanswer::answer(Some(&pack), &format!("tell me about {}", name(id)), "en", None);
+        let packanswer::Answer::NatMed(n) = a else { panic!("{id}: {a:?}") };
+        assert_eq!((n.groups().count(), n.caution()), (1, packanswer::key::NATMED_CAUTION), "{id}");
+        let marks: Vec<packanswer::Kind> = n.groups().next().unwrap().entries().map(|(k, _)| k).collect();
+        let count = |k| marks.iter().filter(|m| **m == k).count();
+        eprintln!("ORDER {id}: {} warnings, {} background, {} uses", count(packanswer::Kind::Warning), count(packanswer::Kind::Background), count(packanswer::Kind::Use));
+        assert!(marks.first() == Some(&packanswer::Kind::Warning) && marks.windows(2).all(|w| w[0] <= w[1]), "{id}");
+    }
+}

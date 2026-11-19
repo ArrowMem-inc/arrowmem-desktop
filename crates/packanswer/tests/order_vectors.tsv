@@ -1,0 +1,40 @@
+# Mark orders: marks in stored order (w warning, b background, u use), then ok (the pack loads) or no (the whole pack is refused).
+w	ok
+w b	ok
+w b u	ok
+w u	ok
+w w b b u u	ok
+b	no
+u	no
+b u	no
+b b b	no
+b w	no
+u w	no
+u b w	no
+w u b	no
+b u w	no
+w b w u	no
+w u w	no
+# Name pairs: two plants, each as common name, latin name, then any aliases, separated by a bar. ok means both plants load, no means the whole pack is refused.
+# The text {zwsp} stands for one zero width space character in the reader's test, so this file holds only plain ASCII.
+name	Garlic|Allium sativum	Onion|Allium cepa	ok
+name	Garlic|Allium sativum	Garlic (clove)|Allium sativum clove	ok
+name	Garlic|Allium sativum	garlic|Allium other	no
+name	Garlic|Allium sativum	GARLIC!|Allium other	no
+name	Garlic|Allium sativum	Garlic.|Allium other	no
+name	Garlic|Allium sativum	Onion|Allium cepa|garlic	no
+name	Garlic|Allium sativum|stinking rose	Onion|Allium cepa|Stinking-Rose	no
+name	Garlic|Allium sativum	Onion|allium SATIVUM	no
+name	Garlic|Allium sativum	Allium sativum|Allium other	no
+name	Garlic|Allium sativum|rose	Onion|Allium cepa|rose	no
+name	Lilac|Syringa vulgaris	Lilac|Syringa other	no
+name	Lilac|Syringa vulgaris	Onion|Allium cepa|LILAC	no
+# A name that is only a part of another plant's longer name loads today and both plants are drawn when both are asked for. Accepted for now.
+name	Garlic (clove)|Allium sativum clove	Clove|Syzygium aromaticum	ok
+name	Garlic (clove)|Allium sativum clove	Onion|Allium cepa|Garlic	ok
+name	Garlic (clove)|Allium sativum clove	Onion|Allium cepa|clove	ok
+# A zero width character inside a word splits it, so the two names differ and both plants load.
+name	Garlic|Allium sativum	Gar{zwsp}lic|Allium other	ok
+# A name with no letter or digit is refused.
+name	Garlic|Allium sativum	Onion|Allium cepa|!!!	no
+name	Garlic|Allium sativum	...|Allium cepa	no

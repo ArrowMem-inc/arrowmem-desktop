@@ -1,7 +1,7 @@
 //! Number in quote gate, a belt on top of code assembly. Every maximal run of Unicode numeric characters (a superset of general category Nd, so
 //! the stricter side), with interior separators and an attached unit token, must EQUAL a run of a quote, a stored context or a source field of the same
 //! answer, or be a fixed chrome constant. Anything else: the caller replaces the whole answer. Never strip a number and keep the sentence.
-use crate::Found;
+use crate::{Entry, Found, NatMed};
 use std::collections::HashSet;
 
 /// The fixed chrome constants. Everything else must come from the answer's own source text.
@@ -45,7 +45,18 @@ pub fn passes(found: &Found) -> bool {
     let source = found.blocks.iter().flat_map(|b| {
         [b.quote.as_str(), b.url.as_str(), b.retrieved.as_str()].into_iter().chain(b.context.as_deref()).chain(b.context_url.as_deref())
     });
+    gate(source, found.chrome.iter().copied())
+}
+
+/// The same gate over a natural medicine answer; the plant headings are shown text too, so they are scanned and never vouch for anything.
+pub fn passes_natmed(n: &NatMed) -> bool {
+    let entries: Vec<&Entry> = n.groups().flat_map(|g| g.entries().map(|(_, e)| e)).collect();
+    let source = entries.iter().flat_map(|e| [e.quote(), e.url(), e.retrieved()]);
+    let shown = n.groups().map(|g| g.plant()).chain([n.caution()]).chain(entries.iter().filter_map(|e| e.label()));
+    gate(source, shown)
+}
+
+fn gate<'a>(source: impl Iterator<Item = &'a str> + Clone, shown: impl Iterator<Item = &'a str>) -> bool {
     let allowed: HashSet<&str> = source.clone().flat_map(runs).chain(CHROME).collect();
-    let keys = found.chrome.iter().copied().chain(found.blocks.iter().filter_map(|b| b.label));
-    source.chain(keys).all(|s| runs(s).iter().all(|r| allowed.contains(r)))
+    source.chain(shown).all(|s| runs(s).iter().all(|r| allowed.contains(r)))
 }

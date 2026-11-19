@@ -9,7 +9,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub const HOSTS_FILE: &str = "hosts.json";
-/// The derived natural medicine file: plant_id, common_name, latin_name, aliases, sources of quote, url, fetched, traditional. Nothing authored.
+/// The derived natural medicine file: plant_id, common_name, latin_name, aliases, sources of quote, url, fetched, traditional, kind. Nothing authored.
 pub const NATMED_FILE: &str = "natmed_shippable.jsonl";
 const CANDIDATES: usize = 8;
 /// The closed topic set. A topic file is named `<topic>.jsonl` and every record in it carries exactly that topic.
@@ -17,7 +17,7 @@ pub const TOPICS: [&str; 7] = ["survival", "preservation", "game_fish", "trappin
 /// The loader's exact key lists. The converter's lists must equal these (tests/real_v2.rs compares `packconv keys`).
 pub const RECORD_KEYS: [&str; 7] = ["id", "topic", "quote", "source_url", "context", "context_url", "retrieved"];
 pub const NATMED_KEYS: [&str; 5] = ["plant_id", "common_name", "latin_name", "aliases", "sources"];
-pub const SOURCE_KEYS: [&str; 4] = ["quote", "url", "fetched", "traditional"];
+pub const SOURCE_KEYS: [&str; 5] = ["quote", "url", "fetched", "traditional", "kind"];
 pub const HOSTS_KEYS: [&str; 2] = ["credit", "disclaimer"];
 
 pub struct Record {
@@ -30,14 +30,25 @@ pub struct Record {
     pub context_url: String,
 }
 
+/// What a natural medicine source record is. Closed: no default, no other value. The variant order is the draw order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Kind {
+    Warning,
+    Background,
+    Use,
+}
+
 pub struct Source {
     pub quote: String,
     pub url: String,
     pub fetched: String,
     pub traditional: bool,
+    pub kind: Kind,
 }
 
 pub struct Plant {
+    /// The plant's own common name, drawn as the heading of its block.
+    pub name: String,
     names: Vec<Vec<String>>,
     pub sources: Vec<Source>,
 }
@@ -68,6 +79,14 @@ fn object(v: Value) -> Result<Map<String, Value>, Unavailable> {
 
 fn exact(m: &Map<String, Value>, keys: &[&str], why: &'static str) -> Result<(), Unavailable> {
     if m.len() == keys.len() && keys.iter().all(|k| m.contains_key(*k)) { Ok(()) } else { Err(Unavailable(why)) }
+}
+
+/// The parser keeps the last of a repeated key, so a line that says one thing twice would load as the second. A shipped line is compact JSON in
+/// the order it was written (the keep order feature), so it must equal its own parsed form written back: a repeated key, a stray space or an odd
+/// escape breaks that and the line is refused. The key order itself is not checked (the exact key list and the line hash bind the content).
+fn is_its_own_rewrite(raw: &str, m: &Map<String, Value>) -> bool {
+    let written_back = Value::Object(m.clone()).to_string();
+    raw == written_back
 }
 
 fn host_char(b: u8) -> bool {
@@ -118,12 +137,16 @@ impl Pack {
         let hosts = hosts(&host_bytes.1)?;
         let host_known = |url: &str| host_of(url).is_some_and(|h| hosts.contains_key(h));
         let (mut records, mut plants) = (Vec::new(), Vec::new());
-        let mut ids = HashSet::new();
+        let (mut ids, mut seen_names) = (HashSet::new(), HashSet::new());
         for (name, bytes) in &files {
             if name == HOSTS_FILE || !name.ends_with(".jsonl") {
                 continue;
             }
-            for (raw, m) in lines(bytes)? {
+            let parsed = lines(bytes)?;
+            if name == NATMED_FILE && parsed.is_empty() {
+                return Err(Unavailable("empty natural medicine file"));
+            }
+            for (raw, m) in parsed {
                 if name == NATMED_FILE {
                     let id = field(&m, "plant_id")?;
                     if !integrity::safe_path(id) {
@@ -132,7 +155,19 @@ impl Pack {
                     if !ids.insert(id.to_string()) {
                         return Err(Unavailable("duplicate id"));
                     }
-                    plants.extend(plant(&m, held, yes.contains(&(id, integrity::sha256_hex(raw.as_bytes()).as_str())), &host_known)?);
+                    if !is_its_own_rewrite(raw, &m) {
+                        return Err(Unavailable("not its own rewrite"));
+                    }
+                    let p = plant(&m, held, &host_known)?;
+                    // a name, latin name or alias that is another plant's name would show a plant nobody asked for: refused, approved or not
+                    let own: HashSet<&Vec<String>> = p.names.iter().collect();
+                    if own.iter().any(|n| seen_names.contains(*n)) {
+                        return Err(Unavailable("shared plant name"));
+                    }
+                    seen_names.extend(own.into_iter().cloned());
+                    if yes.contains(&(id, integrity::sha256_hex(raw.as_bytes()).as_str())) {
+                        plants.push(p);
+                    }
                 } else {
                     let r = record(&m, name.strip_suffix(".jsonl").unwrap_or(name), held, &host_known)?;
                     if !ids.insert(r.id.clone()) {
@@ -216,7 +251,7 @@ fn record(m: &Map<String, Value>, stem: &str, held: &HashSet<String>, host_known
     })
 }
 
-fn plant(m: &Map<String, Value>, held: &HashSet<String>, approved: bool, host_known: &dyn Fn(&str) -> bool) -> Result<Option<Plant>, Unavailable> {
+fn plant(m: &Map<String, Value>, held: &HashSet<String>, host_known: &dyn Fn(&str) -> bool) -> Result<Plant, Unavailable> {
     exact(m, &NATMED_KEYS, "natmed keys")?;
     let id = field(m, "plant_id")?;
     if held.contains(id) {
@@ -226,25 +261,35 @@ fn plant(m: &Map<String, Value>, held: &HashSet<String>, approved: bool, host_kn
         .into_iter()
         .map(tokens)
         .collect::<Vec<_>>();
-    for a in m["aliases"].as_array().ok_or(Unavailable("aliases"))? {
+    for a in m.get("aliases").and_then(Value::as_array).ok_or(Unavailable("aliases"))? {
         names.push(tokens(a.as_str().ok_or(Unavailable("alias"))?));
     }
     if names.iter().any(Vec::is_empty) {
         return Err(Unavailable("empty plant name"));
     }
     let mut sources = Vec::new();
-    for s in m["sources"].as_array().ok_or(Unavailable("sources"))? {
+    for s in m.get("sources").and_then(Value::as_array).ok_or(Unavailable("sources"))? {
         let s = s.as_object().ok_or(Unavailable("source"))?;
         exact(s, &SOURCE_KEYS, "natmed keys")?;
-        let (quote, url) = (field(s, "quote")?, field(s, "url")?);
-        if quote.is_empty() || !host_known(url) {
+        let (quote, url, fetched) = (field(s, "quote")?, field(s, "url")?, field(s, "fetched")?);
+        // a quote with no letter or digit (spaces, zero width characters) shows nothing, so it is blank
+        if !quote.chars().any(char::is_alphanumeric) || fetched.trim().is_empty() || !host_known(url) {
             return Err(Unavailable("natmed source"));
         }
-        let traditional = s["traditional"].as_bool().ok_or(Unavailable("traditional flag"))?;
-        sources.push(Source { quote: quote.to_string(), url: url.to_string(), fetched: field(s, "fetched")?.to_string(), traditional });
+        let traditional = s.get("traditional").and_then(Value::as_bool).ok_or(Unavailable("traditional flag"))?;
+        let kind = match field(s, "kind") {
+            Ok("warning") => Kind::Warning,
+            Ok("background") => Kind::Background,
+            Ok("use") => Kind::Use,
+            _ => return Err(Unavailable("kind")),
+        };
+        if sources.last().is_some_and(|p: &Source| p.kind > kind) {
+            return Err(Unavailable("kind order"));
+        }
+        sources.push(Source { quote: quote.to_string(), url: url.to_string(), fetched: fetched.to_string(), traditional, kind });
     }
-    if sources.is_empty() {
-        return Err(Unavailable("plant without sources"));
+    if sources.first().is_none_or(|s| s.kind != Kind::Warning) {
+        return Err(Unavailable("plant without a warning"));
     }
-    Ok(approved.then_some(Plant { names, sources }))
+    Ok(Plant { name: field(m, "common_name")?.to_string(), names, sources })
 }
